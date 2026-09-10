@@ -219,3 +219,4 @@ __marimo__/
 
 # Node
 node_modules/
+.kilo/kilo.jsonc
