@@ -203,12 +203,12 @@ const SCRIPT = `
     for (var i = 0; i < summaries.length; i++) {
       var checkbox = summaries[i].querySelector('input[type="checkbox"]');
       if (checkbox && !checkbox.checked) {
-        uncheckedSessions.push(checkbox.getAttribute('data-session'));
+        uncheckedSessions.push(sessionNumberOf(checkbox));
       }
     }
 
     if (uncheckedSessions.length > 0) {
-      var lowestUnchecked = uncheckedSessions.sort((a, b) => parseInt(a) - parseInt(b))[0];
+      var lowestUnchecked = uncheckedSessions.sort(function (a, b) { return a - b; })[0];
       var targetSummary = document.querySelector('.session-summary[data-session="' + lowestUnchecked + '"]');
       if (targetSummary) {
         setOpen(targetSummary, true);
