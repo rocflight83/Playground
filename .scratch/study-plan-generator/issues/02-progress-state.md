@@ -8,14 +8,14 @@
 
 **User stories covered:** 15, 26, 27, 28, 29, 51.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Checking a session persists that state; reloading restores it
-- [ ] Notes typed against a session persist and restore
-- [ ] The stakes field persists and restores
-- [ ] State is keyed by session number, so a plan whose session content changed but whose numbering did not retains its progress
-- [ ] On load, the lowest-numbered unchecked session is expanded; when every session is checked, none is force-expanded
-- [ ] The progress indicator reflects the number of checked sessions
-- [ ] Export produces a document that, imported into a page with empty storage, restores checkboxes, notes and stakes exactly
-- [ ] The page renders correctly and remains usable when storage throws or returns nothing
-- [ ] Client-side behaviour is tested by driving the rendered output in a DOM environment, not through a separate seam
+- [x] Checking a session persists that state; reloading restores it
+- [x] Notes typed against a session persist and restore
+- [x] The stakes field persists and restores
+- [x] State is keyed by session number, so a plan whose session content changed but whose numbering did not retains its progress
+- [x] On load, the lowest-numbered unchecked session is expanded; when every session is checked, none is force-expanded
+- [x] The progress indicator reflects the number of checked sessions
+- [x] Export produces a document that, imported into a page with empty storage, restores checkboxes, notes and stakes exactly
+- [x] The page renders correctly and remains usable when storage throws or returns nothing
+- [x] Client-side behaviour is tested by driving the rendered output in a DOM environment, not through a separate seam
