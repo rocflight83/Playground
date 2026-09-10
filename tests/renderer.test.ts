@@ -132,11 +132,20 @@ describe('the page reads as a study plan', () => {
 
   it('separates sessions into their phases with phase bands', () => {
     const doc = structure(renderPlan(fixturePlan))
-    const bands = Array.from(doc.querySelectorAll('.phase-band'))
-    expect(bands.length).toBe(fixturePlan.phases.length)
-    for (const phase of fixturePlan.phases) {
-      expect(doc.body.textContent).toContain(phase.title)
+    const main = doc.querySelector('.page')!
+    const seq: (string | number)[] = []
+    for (const el of Array.from(main.children)) {
+      if (el.classList.contains('phase-band')) {
+        seq.push(el.querySelector('.phase-title')!.textContent ?? '')
+      } else if (el.classList.contains('session')) {
+        seq.push(Number(el.getAttribute('data-session')))
+      }
     }
+    const expected: (string | number)[] = []
+    for (const phase of fixturePlan.phases) {
+      expected.push(phase.title, ...phase.sessions)
+    }
+    expect(seq).toEqual(expected)
   })
 })
 
@@ -168,7 +177,9 @@ describe('sessions render as collapsed rows that expand on click', () => {
 
     summary.click()
     expect(detail.hidden).toBe(false)
-    expect(detail.querySelector('.material-link')).not.toBeNull()
+    const link = detail.querySelector('.material-link')
+    expect(link).not.toBeNull()
+    expect(link!.getAttribute('href')).toBe(fixturePlan.sessions[0].materials[0].url)
     expect(detail.textContent).toContain('30 min')
     expect(detail.textContent).toContain(fixturePlan.sessions[0].selfCheck)
     expect(detail.querySelector('textarea')).not.toBeNull()
@@ -190,9 +201,11 @@ describe('sessions render as collapsed rows that expand on click', () => {
   })
 
   it('shows a paid material with its price', () => {
-    const html = renderPlan(fixturePlan)
-    expect(html).toMatch(/\$29/)
-    expect(html).toMatch(/paid/i)
+    const dom = load(renderPlan(fixturePlan))
+    const doc = dom.window.document
+    ;(doc.querySelector('.session[data-session="2"] .session-summary') as HTMLElement).click()
+    const paid = doc.querySelector('.session[data-session="2"] .material-paid')
+    expect(paid?.textContent).toContain('$29')
   })
 })
 
@@ -203,6 +216,23 @@ describe('the renderer is a pure, deterministic function of the plan data', () =
 
   it('produces identical output for a structurally equal but distinct plan object', () => {
     expect(renderPlan(clonePlan(fixturePlan))).toBe(renderPlan(fixturePlan))
+  })
+
+  it('does not mutate the plan data it is given', () => {
+    const plan = clonePlan(fixturePlan)
+    const before = JSON.stringify(plan)
+    renderPlan(plan)
+    expect(JSON.stringify(plan)).toBe(before)
+  })
+
+  it('reflects data edits on re-render, proving there is no stale cache', () => {
+    const plan = clonePlan(fixturePlan)
+    const first = renderPlan(plan)
+    plan.sessions[0].title = 'A hand-edited title'
+    const second = renderPlan(plan)
+    expect(second).not.toBe(first)
+    expect(second).toContain('A hand-edited title')
+    expect(first).not.toContain('A hand-edited title')
   })
 
   it('does not persist checkbox or notes state across reloads (inert in this ticket)', () => {

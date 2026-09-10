@@ -94,20 +94,21 @@ function renderMaterial(material: Material): string {
 
 function renderSession(session: Session): string {
   const materials = session.materials.map(renderMaterial).join('')
-  const detailId = 'session-detail-' + session.number
+  const num = esc(String(session.number))
+  const detailId = 'session-detail-' + num
   return (
-    '<section class="session" data-session="' + session.number + '">' +
+    '<section class="session" data-session="' + num + '">' +
     '<div class="session-summary" role="button" tabindex="0" aria-expanded="false" aria-controls="' + detailId + '">' +
-    '<input class="session-check" type="checkbox" data-session="' + session.number + '" aria-label="Mark session ' + session.number + ' complete">' +
-    '<span class="session-number">' + session.number + '</span>' +
+    '<input class="session-check" type="checkbox" data-session="' + num + '" aria-label="Mark session ' + num + ' complete">' +
+    '<span class="session-number">' + num + '</span>' +
     '<span class="session-title">' + esc(session.title) + '</span>' +
     '<span class="session-artifact">' + esc(session.artifactOneLiner) + '</span>' +
     '</div>' +
     '<div class="session-detail" id="' + detailId + '" hidden>' +
     '<ul class="materials">' + materials + '</ul>' +
     '<p class="self-check"><span class="self-check-label">Self-check:</span> ' + esc(session.selfCheck) + '</p>' +
-    '<label class="notes-label" for="notes-' + session.number + '">Notes' +
-    '<textarea class="notes-area" id="notes-' + session.number + '" data-session="' + session.number + '" placeholder="What worked, what did not, what to review."></textarea>' +
+    '<label class="notes-label" for="notes-' + num + '">Notes' +
+    '<textarea class="notes-area" id="notes-' + num + '" data-session="' + num + '" placeholder="What worked, what did not, what to review."></textarea>' +
     '</label>' +
     '</div>' +
     '</section>'
