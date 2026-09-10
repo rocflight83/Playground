@@ -30,7 +30,7 @@ Issues are tracked as markdown files under `.scratch/<feature>/` in this repo. S
 
 ### Triage labels
 
-Uses the five default triage roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+Uses the five default triage roles plus a local `done` role: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, `done`. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
