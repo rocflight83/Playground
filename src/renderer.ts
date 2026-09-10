@@ -52,27 +52,249 @@ h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
 
 const SCRIPT = `
 (function () {
+  // Progress state management (issue 02)
+  function getStorage() {
+    try {
+      const storage = localStorage.getItem('studyPlanProgress');
+      return storage ? JSON.parse(storage) : {};
+    } catch (e) {
+      console.warn('localStorage failed:', e);
+      return {};
+    }
+  }
+
+  function saveStorage(data) {
+    try {
+      localStorage.setItem('studyPlanProgress', JSON.stringify(data));
+    } catch (e) {
+      console.warn('Failed to save to localStorage:', e);
+    }
+  }
+
+  function getCheckboxState(sessionNumber) {
+    const state = getStorage();
+    return state.checkboxes && state.checkboxes[sessionNumber] === true;
+  }
+
+  function setCheckboxState(sessionNumber, checked) {
+    const state = getStorage();
+    if (!state.checkboxes) state.checkboxes = {};
+    state.checkboxes[sessionNumber] = checked;
+    saveStorage(state);
+  }
+
+  function getNote(sessionNumber) {
+    const state = getStorage();
+    return state.notes && state.notes[sessionNumber] || '';
+  }
+
+  function setNote(sessionNumber, text) {
+    const state = getStorage();
+    if (!state.notes) state.notes = {};
+    if (text) {
+      state.notes[sessionNumber] = text;
+    } else {
+      delete state.notes[sessionNumber];
+    }
+    saveStorage(state);
+  }
+
+  function getStakes() {
+    const state = getStorage();
+    return state.stakes || '';
+  }
+
+  function setStakes(text) {
+    const state = getStorage();
+    if (text) {
+      state.stakes = text;
+    } else {
+      delete state.stakes;
+    }
+    saveStorage(state);
+  }
+
   function setOpen(summary, open) {
     var detail = document.getElementById(summary.getAttribute('aria-controls'));
     if (!detail) return;
     if (open) detail.removeAttribute('hidden'); else detail.setAttribute('hidden', '');
     summary.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
+
   function toggle(summary) { setOpen(summary, summary.getAttribute('aria-expanded') !== 'true'); }
+
   var summaries = document.querySelectorAll('.session-summary');
   for (var i = 0; i < summaries.length; i++) {
     (function (summary) {
+      var sessionNumber = summary.getAttribute('data-session');
+
       summary.addEventListener('click', function (event) {
         if (event.target && event.target.tagName === 'INPUT') return;
         toggle(summary);
       });
+
       summary.addEventListener('keydown', function (event) {
         if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
           event.preventDefault();
           toggle(summary);
         }
       });
+
+      // Handle checkbox changes
+      var checkbox = summary.querySelector('input[type="checkbox"]');
+      if (checkbox) {
+        checkbox.addEventListener('change', function () {
+          var checked = checkbox.checked;
+          var sessionNum = checkbox.getAttribute('data-session');
+          if (sessionNum) {
+            setCheckboxState(parseInt(sessionNum), checked);
+            updateProgressIndicator();
+          }
+        });
+      }
+
+      // Handle notes changes
+      var textarea = summary.nextElementSibling.querySelector('.notes-area');
+      if (textarea) {
+        textarea.addEventListener('input', function () {
+          var sessionNum = textarea.getAttribute('data-session');
+          if (sessionNum) {
+            setNote(parseInt(sessionNum), textarea.value);
+          }
+        });
+      }
     })(summaries[i]);
+  }
+
+  // Set initial checkbox states (issue 02 requirement 1)
+  for (var i = 0; i < summaries.length; i++) {
+    var summary = summaries[i];
+    var checkbox = summary.querySelector('input[type="checkbox"]');
+    if (checkbox) {
+      var sessionNumber = parseInt(checkbox.getAttribute('data-session'));
+      checkbox.checked = getCheckboxState(sessionNumber);
+    }
+  }
+
+  // Set initial notes (issue 02 requirement 2)
+  var textareas = document.querySelectorAll('.notes-area');
+  for (var i = 0; i < textareas.length; i++) {
+    var textarea = textareas[i];
+    var sessionNumber = parseInt(textarea.getAttribute('data-session'));
+    textarea.value = getNote(sessionNumber);
+  }
+
+  // Set initial stakes value (issue 02 requirement 3)
+  var stakesInput = document.getElementById('stakes');
+  if (stakesInput) {
+    stakesInput.value = getStakes();
+    stakesInput.addEventListener('input', function () {
+      setStakes(stakesInput.value);
+    });
+  }
+
+  // Set initial session expansion (issue 02 requirement 4: lowest unchecked session expanded)
+  var uncheckedSessions = [];
+  for (var i = 0; i < summaries.length; i++) {
+    var summary = summaries[i];
+    var checkbox = summary.querySelector('input[type="checkbox"]');
+    if (checkbox && !checkbox.checked) {
+      uncheckedSessions.push(checkbox.getAttribute('data-session'));
+    }
+  }
+
+  if (uncheckedSessions.length > 0) {
+    var lowestUnchecked = uncheckedSessions.sort((a, b) => parseInt(a) - parseInt(b))[0];
+    var targetSummary = document.querySelector('.session-summary[data-session="' + lowestUnchecked + '"]');
+    if (targetSummary) {
+      setOpen(targetSummary, true);
+    }
+  }
+
+  // Update progress indicator (issue 02 requirement 5)
+  function updateProgressIndicator() {
+    var checkedCount = 0;
+    var total = summaries.length;
+    for (var i = 0; i < summaries.length; i++) {
+      var checkbox = summaries[i].querySelector('input[type="checkbox"]');
+      if (checkbox && checkbox.checked) checkedCount++;
+    }
+
+    // Create or update progress indicator
+    var existingIndicator = document.querySelector('.progress-indicator');
+    if (existingIndicator) {
+      existingIndicator.textContent = checkedCount + ' of ' + total + ' sessions complete';
+    } else {
+      var progressDiv = document.createElement('div');
+      progressDiv.className = 'progress-indicator';
+      progressDiv.style.cssText = 'position: fixed; bottom: 0; left: 0; right: 0; background: var(--band); padding: 0.5rem; text-align: center; border-top: 1px solid var(--line); font-size: 0.9rem;';
+      progressDiv.textContent = checkedCount + ' of ' + total + ' sessions complete';
+      document.body.appendChild(progressDiv);
+    }
+  }
+
+  updateProgressIndicator();
+
+  // Export/Import controls (issue 02 requirement 6)
+  function exportProgress() {
+    var state = getStorage();
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'study-plan-progress.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importProgress(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var state = JSON.parse(e.target.result);
+        saveStorage(state);
+        // Reload page to apply imported state
+        window.location.reload();
+      } catch (err) {
+        alert('Invalid progress file format');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Add export/import controls to page (issue 02 requirement 6)
+  var controlDiv = document.createElement('div');
+  controlDiv.style.cssText = 'position: fixed; top: 0; right: 0; padding: 0.5rem; background: var(--band); border-bottom: 1px solid var(--line); z-index: 1000;';
+  var exportBtn = document.createElement('button');
+  exportBtn.textContent = 'Export Progress';
+  exportBtn.style.cssText = 'margin-right: 0.5rem; padding: 0.25rem 0.5rem; cursor: pointer;';
+  exportBtn.onclick = exportProgress;
+  var importInput = document.createElement('input');
+  importInput.type = 'file';
+  importInput.accept = '.json';
+  importInput.style.cssText = 'cursor: pointer;';
+  importInput.onchange = importProgress;
+  var importLabel = document.createElement('label');
+  importLabel.textContent = 'Import Progress';
+  importLabel.style.cssText = 'cursor: pointer; margin-left: 0.5rem;';
+  importLabel.appendChild(importInput);
+  controlDiv.appendChild(exportBtn);
+  controlDiv.appendChild(importLabel);
+  document.body.prepend(controlDiv);
+
+  // Defensive handling for localStorage failures (issue 02 requirement 7)
+  try {
+    localStorage.setItem('test', 'test');
+    localStorage.removeItem('test');
+  } catch (e) {
+    console.warn('localStorage not available, progress state will be volatile');
+    // Clear any existing state
+    localStorage.removeItem('studyPlanProgress');
   }
 })();
 `.trim()
