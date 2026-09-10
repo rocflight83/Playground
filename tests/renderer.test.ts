@@ -11,6 +11,19 @@ function load(html: string): JSDOM {
   return new JSDOM(html, { runScripts: 'dangerously' })
 }
 
+// localStorage throws for the opaque origin `load()` uses above, so these tests
+// give the page a real origin and can seed `studyPlanProgress` up front to
+// simulate "the browser already has state when the page loads" (i.e. a reload).
+function loadWithStorage(html: string, seed?: Record<string, unknown>): JSDOM {
+  return new JSDOM(html, {
+    runScripts: 'dangerously',
+    url: 'https://example.com/',
+    beforeParse(window) {
+      if (seed) window.localStorage.setItem('studyPlanProgress', JSON.stringify(seed))
+    },
+  })
+}
+
 function structure(html: string): Document {
   return new JSDOM(html).window.document
 }
@@ -206,6 +219,86 @@ describe('sessions render as collapsed rows that expand on click', () => {
     ;(doc.querySelector('.session[data-session="2"] .session-summary') as HTMLElement).click()
     const paid = doc.querySelector('.session[data-session="2"] .material-paid')
     expect(paid?.textContent).toContain('$29')
+  })
+})
+
+describe('progress state persists to localStorage (issue 02)', () => {
+  it('restores a checked session from storage on load', () => {
+    const html = renderPlan(fixturePlan)
+    const dom = loadWithStorage(html, { checkboxes: { 3: true } })
+    const doc = dom.window.document
+    const checked = doc.querySelector(
+      '.session[data-session="3"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    const unchecked = doc.querySelector(
+      '.session[data-session="1"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    expect(checked.checked).toBe(true)
+    expect(unchecked.checked).toBe(false)
+  })
+
+  it('restores a note from storage on load', () => {
+    const html = renderPlan(fixturePlan)
+    const dom = loadWithStorage(html, { notes: { 5: 'Review argparse subcommands.' } })
+    const textarea = dom.window.document.getElementById('notes-5') as HTMLTextAreaElement
+    expect(textarea.value).toBe('Review argparse subcommands.')
+  })
+
+  it('restores the stakes field from storage on load', () => {
+    const html = renderPlan(fixturePlan)
+    const dom = loadWithStorage(html, { stakes: 'Ship or refund my course fee.' })
+    const stakes = dom.window.document.getElementById('stakes') as HTMLInputElement
+    expect(stakes.value).toBe('Ship or refund my course fee.')
+  })
+
+  it('persists a checkbox change to storage, keyed by session number', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const checkbox = dom.window.document.querySelector(
+      '.session[data-session="1"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new dom.window.Event('change'))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress')!)
+    expect(saved.checkboxes['1']).toBe(true)
+  })
+
+  it('persists a typed note to storage, keyed by session number', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const textarea = dom.window.document.getElementById('notes-2') as HTMLTextAreaElement
+    textarea.value = 'Remember the off-list source needs a paid fallback check.'
+    textarea.dispatchEvent(new dom.window.Event('input'))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress')!)
+    expect(saved.notes['2']).toBe('Remember the off-list source needs a paid fallback check.')
+  })
+
+  it('persists the stakes field to storage', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const stakes = dom.window.document.getElementById('stakes') as HTMLInputElement
+    stakes.value = 'No excuses.'
+    stakes.dispatchEvent(new dom.window.Event('input'))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress')!)
+    expect(saved.stakes).toBe('No excuses.')
+  })
+
+  it('shows a progress indicator that reflects the number of checked sessions', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const doc = dom.window.document
+    expect(doc.querySelector('.progress-indicator')?.textContent).toBe('0 of 14 sessions complete')
+    const checkbox = doc.querySelector(
+      '.session[data-session="1"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new dom.window.Event('change'))
+    expect(doc.querySelector('.progress-indicator')?.textContent).toBe('1 of 14 sessions complete')
+  })
+
+  it('renders export and import controls', () => {
+    const doc = loadWithStorage(renderPlan(fixturePlan)).window.document
+    const exportBtn = Array.from(doc.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Export Progress'
+    )
+    expect(exportBtn).not.toBeUndefined()
+    expect(doc.querySelector('input[type="file"]')).not.toBeNull()
   })
 })
 
