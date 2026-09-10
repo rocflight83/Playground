@@ -209,7 +209,7 @@ const SCRIPT = `
 
     if (uncheckedSessions.length > 0) {
       var lowestUnchecked = uncheckedSessions.sort(function (a, b) { return a - b; })[0];
-      var targetSummary = document.querySelector('.session-summary[data-session="' + lowestUnchecked + '"]');
+      var targetSummary = document.querySelector('.session[data-session="' + lowestUnchecked + '"] .session-summary');
       if (targetSummary) {
         setOpen(targetSummary, true);
       }

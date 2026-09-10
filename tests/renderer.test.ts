@@ -182,9 +182,12 @@ describe('sessions render as collapsed rows that expand on click', () => {
   })
 
   it('expands a session on click to reveal materials, durations, self-check and notes, and collapses again', () => {
+    // Session 2, not 1: session 1 is the lowest unchecked session and is
+    // already auto-expanded on load, which would make the first click below
+    // collapse rather than expand it.
     const dom = load(renderPlan(fixturePlan))
     const doc = dom.window.document
-    const row = doc.querySelector('.session[data-session="1"]')!
+    const row = doc.querySelector('.session[data-session="2"]')!
     const summary = row.querySelector('.session-summary') as HTMLElement
     const detail = row.querySelector('.session-detail') as HTMLElement
 
@@ -192,9 +195,9 @@ describe('sessions render as collapsed rows that expand on click', () => {
     expect(detail.hidden).toBe(false)
     const link = detail.querySelector('.material-link')
     expect(link).not.toBeNull()
-    expect(link!.getAttribute('href')).toBe(fixturePlan.sessions[0].materials[0].url)
-    expect(detail.textContent).toContain('30 min')
-    expect(detail.textContent).toContain(fixturePlan.sessions[0].selfCheck)
+    expect(link!.getAttribute('href')).toBe(fixturePlan.sessions[1].materials[0].url)
+    expect(detail.textContent).toContain('35 min')
+    expect(detail.textContent).toContain(fixturePlan.sessions[1].selfCheck)
     expect(detail.querySelector('textarea')).not.toBeNull()
 
     summary.click()
@@ -202,9 +205,10 @@ describe('sessions render as collapsed rows that expand on click', () => {
   })
 
   it('does not expand when the checkbox is clicked, and toggles the checkbox instead', () => {
+    // Session 2, not 1, for the same reason as above: session 1 starts expanded.
     const dom = load(renderPlan(fixturePlan))
     const doc = dom.window.document
-    const row = doc.querySelector('.session[data-session="1"]')!
+    const row = doc.querySelector('.session[data-session="2"]')!
     const detail = row.querySelector('.session-detail') as HTMLElement
     const checkbox = row.querySelector('.session-summary input[type="checkbox"]') as HTMLInputElement
 
@@ -299,6 +303,24 @@ describe('progress state persists to localStorage (issue 02)', () => {
     )
     expect(exportBtn).not.toBeUndefined()
     expect(doc.querySelector('input[type="file"]')).not.toBeNull()
+  })
+
+  it('expands the lowest-numbered unchecked session on load', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan), { checkboxes: { 1: true, 2: true } })
+    const doc = dom.window.document
+    const detailFor = (n: number) =>
+      doc.querySelector(`.session[data-session="${n}"] .session-detail`) as HTMLElement
+    expect(detailFor(3).hidden).toBe(false)
+    expect(detailFor(1).hidden).toBe(true)
+    expect(detailFor(4).hidden).toBe(true)
+  })
+
+  it('force-expands no session once every session is checked', () => {
+    const allChecked = Object.fromEntries(fixturePlan.sessions.map((s) => [s.number, true]))
+    const dom = loadWithStorage(renderPlan(fixturePlan), { checkboxes: allChecked })
+    const doc = dom.window.document
+    const details = Array.from(doc.querySelectorAll('.session-detail')) as HTMLElement[]
+    expect(details.every((d) => d.hidden)).toBe(true)
   })
 })
 

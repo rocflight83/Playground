@@ -19,3 +19,7 @@
 - [x] Export produces a document that, imported into a page with empty storage, restores checkboxes, notes and stakes exactly
 - [x] The page renders correctly and remains usable when storage throws or returns nothing
 - [x] Client-side behaviour is tested by driving the rendered output in a DOM environment, not through a separate seam
+
+## Comments
+
+Code review after the initial implementation found the "lowest unchecked session expands on load" criterion was checked off but not actually working: `expandLowestUnchecked` queried `.session-summary[data-session="..."]`, but `data-session` is only present on the outer `.session` element and on the checkbox/textarea, never on `.session-summary` itself, so the selector matched nothing on every load. Fixed by querying `.session[data-session="..."] .session-summary` instead. Added DOM tests (`tests/renderer.test.ts`) covering the auto-expand behaviour, including the "everything checked → nothing force-expanded" case, and adjusted two pre-existing click-toggle tests that had incidentally relied on session 1 starting collapsed.
