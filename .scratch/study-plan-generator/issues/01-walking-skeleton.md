@@ -10,7 +10,7 @@ This ticket fixes the plan data model for everything downstream, and establishes
 
 **User stories covered:** 17, 47, 48, 49, 50, 52, 53, 59, 60. Partially covered — the display half only, with content quality landing in ticket 04: 6, 10, 11, 12, 16, 20, 22, 25.
 
-**Status:** ready-for-human
+**Status:** done
 
 - [x] A fixture plan document, checked in, exercises every part of the data model: meta, scope note, DISSS preamble, phases, 14 sessions, materials with durations and paid flags, verification records, outlier stories
 - [x] Rendering that fixture produces a complete HTML document
