@@ -265,6 +265,29 @@ describe('sessions render as collapsed rows that expand on click', () => {
     }
     expect(consolidationNumbers.sort((a, b) => a - b)).toEqual([6, 11])
   })
+
+  it('shows the high-frequency units each session drills (CAFE repetition)', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    for (const session of fixturePlan.sessions) {
+      const el = doc.querySelector(`.session[data-session="${session.number}"]`)!
+      const text = el.textContent ?? ''
+      for (const unit of session.highFrequencyUnits) {
+        expect(text).toContain(unit)
+      }
+    }
+  })
+
+  it("shows a session's encoding hook when it has one, and nothing in its place when it does not", () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const withHook = fixturePlan.sessions.find((s) => s.encodingHook)!
+    const withoutHook = fixturePlan.sessions.find((s) => !s.encodingHook)!
+
+    const hookEl = doc.querySelector(`.session[data-session="${withHook.number}"] .session-hook`)
+    expect(hookEl?.textContent).toContain(withHook.encodingHook!)
+    expect(
+      doc.querySelector(`.session[data-session="${withoutHook.number}"] .session-hook`)
+    ).toBeNull()
+  })
 })
 
 describe('progress state persists to localStorage (issue 02)', () => {

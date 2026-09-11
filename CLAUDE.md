@@ -16,11 +16,14 @@ from the network.
 
 ## Commands
 
+- `npm run generate -- <plan.json> [baseDir]` — generate mode: validate, verify
+  and render a plan the `/study-plan` skill produced
 - `npm test` — run the suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (must stay clean)
 
-There is no build step; `vitest` transpiles TypeScript directly.
+There is no build step; `vitest` transpiles TypeScript directly, and
+`scripts/generate.ts` runs under Node's `--experimental-strip-types`.
 
 ## Agent skills
 

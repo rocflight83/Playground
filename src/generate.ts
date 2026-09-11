@@ -1,18 +1,27 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { PlanData } from './plan-types'
-import { renderPlan } from './renderer'
-import { slugify } from './slug'
-import { validatePlan } from './validation'
-import type { FetchLike, SearchReplacement, VerificationReport } from './verification'
-import { verifyPlan } from './verification'
+import type { PlanData } from './plan-types.ts'
+import { renderPlan } from './renderer.ts'
+import { slugify } from './slug.ts'
+import { validatePlan } from './validation.ts'
+import type { VerificationReport, VerifyPlanOptions } from './verification.ts'
+import { verifyPlan } from './verification.ts'
 
 export interface FileSystemAdapter {
+  exists(path: string): Promise<boolean>
   mkdir(path: string): Promise<void>
   writeFile(path: string, content: string): Promise<void>
 }
 
 const nodeFileSystem: FileSystemAdapter = {
+  exists: async (path) => {
+    try {
+      await access(path)
+      return true
+    } catch {
+      return false
+    }
+  },
   mkdir: async (path) => {
     await mkdir(path, { recursive: true })
   },
@@ -21,10 +30,11 @@ const nodeFileSystem: FileSystemAdapter = {
   },
 }
 
-export interface GenerateOptions {
-  fetch: FetchLike
-  searchReplacement: SearchReplacement
-  now?: () => string
+/**
+ * Generation is verification plus a place to put the result, so it takes the
+ * verification options as they are rather than restating them.
+ */
+export interface GenerateOptions extends VerifyPlanOptions {
   fs?: FileSystemAdapter
 }
 
@@ -52,6 +62,19 @@ export class ValidationFailedError extends Error {
 }
 
 /**
+ * Find the first directory name under `baseDir` that is not already taken,
+ * starting at the bare slug and then suffixing `-2`, `-3`, and so on. Plans
+ * accumulate: regenerating the same subject never overwrites an earlier plan
+ * along with whatever progress the learner recorded against it.
+ */
+async function freeDirectory(fs: FileSystemAdapter, baseDir: string, slug: string): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    const candidate = join(baseDir, attempt === 1 ? slug : `${slug}-${attempt}`)
+    if (!(await fs.exists(candidate))) return candidate
+  }
+}
+
+/**
  * Generate mode: take a plan document produced by the generator (the
  * skill's prompt), validate its invariants, verify every link, and write
  * the plan data plus a rendered self-contained HTML page into a directory
@@ -69,12 +92,11 @@ export async function generatePlan(
 
   const { plan: verified, report } = await verifyPlan(plan, opts)
 
-  const slug = slugify(plan.meta.subject)
-  const planDir = join(baseDir, slug)
+  const fs = opts.fs ?? nodeFileSystem
+  const planDir = await freeDirectory(fs, baseDir, slugify(plan.meta.subject))
   const planPath = join(planDir, 'plan.json')
   const htmlPath = join(planDir, 'index.html')
 
-  const fs = opts.fs ?? nodeFileSystem
   await fs.mkdir(planDir)
   await fs.writeFile(planPath, JSON.stringify(verified, null, 2))
   await fs.writeFile(htmlPath, renderPlan(verified))

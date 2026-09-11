@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import type { PlanData } from '../src/plan-types'
 import { generatePlan, ValidationFailedError, type FileSystemAdapter } from '../src/generate'
@@ -7,6 +10,10 @@ import { fixturePlan } from './fixtures/plan-fixture'
 class MemoryFileSystem implements FileSystemAdapter {
   files = new Map<string, string>()
   createdDirs: Array<string> = []
+
+  async exists(path: string): Promise<boolean> {
+    return this.createdDirs.includes(path)
+  }
 
   async mkdir(path: string): Promise<void> {
     this.createdDirs.push(path)
@@ -32,6 +39,11 @@ function clonePlan(plan: PlanData): PlanData {
   return JSON.parse(JSON.stringify(plan)) as PlanData
 }
 
+/** Assert a path ends with the given segments, whichever separator the platform used. */
+function expectPathEndsWith(actual: string, ...segments: string[]): void {
+  expect(actual.split(/[\\/]/).slice(-segments.length)).toEqual(segments)
+}
+
 describe('generatePlan', () => {
   it('writes the plan and the rendered page into a directory named for the subject', async () => {
     const fs = new MemoryFileSystem()
@@ -42,9 +54,9 @@ describe('generatePlan', () => {
       fs,
     })
 
-    expect(result.planDir.endsWith('python-programming')).toBe(true)
-    expect(result.planPath.endsWith('python-programming/plan.json') || result.planPath.endsWith('python-programming\\plan.json')).toBe(true)
-    expect(result.htmlPath.endsWith('python-programming/index.html') || result.htmlPath.endsWith('python-programming\\index.html')).toBe(true)
+    expectPathEndsWith(result.planDir, 'python-programming')
+    expectPathEndsWith(result.planPath, 'python-programming', 'plan.json')
+    expectPathEndsWith(result.htmlPath, 'python-programming', 'index.html')
     expect(fs.createdDirs.some((d) => d.endsWith('python-programming'))).toBe(true)
     expect(fs.files.has(result.planPath)).toBe(true)
     expect(fs.files.has(result.htmlPath)).toBe(true)
@@ -67,8 +79,26 @@ describe('generatePlan', () => {
     })
 
     expect(a.planDir).not.toBe(b.planDir)
-    expect(a.planDir.endsWith('python-programming')).toBe(true)
-    expect(b.planDir.endsWith('rust-programming')).toBe(true)
+    expectPathEndsWith(a.planDir, 'python-programming')
+    expectPathEndsWith(b.planDir, 'rust-programming')
+  })
+
+  it('writes a second plan for the same subject beside the first instead of overwriting it', async () => {
+    const fs = new MemoryFileSystem()
+    const opts = { fetch: fetchImpl, searchReplacement: noReplacement, now: fixedClock, fs }
+
+    const first = await generatePlan(fixturePlan, '/plans', opts)
+    const second = await generatePlan(fixturePlan, '/plans', opts)
+    const third = await generatePlan(fixturePlan, '/plans', opts)
+
+    expectPathEndsWith(first.planDir, 'python-programming')
+    expectPathEndsWith(second.planDir, 'python-programming-2')
+    expectPathEndsWith(third.planDir, 'python-programming-3')
+
+    // The first plan's files survive the later runs untouched.
+    expect(fs.files.has(first.planPath)).toBe(true)
+    expect(fs.files.has(second.planPath)).toBe(true)
+    expect(first.planPath).not.toBe(second.planPath)
   })
 
   it('writes plan.json containing the (verified) plan data, not HTML', async () => {
@@ -213,17 +243,29 @@ describe('generatePlan', () => {
 })
 
 describe('end-to-end demo: a well-served subject produces a usable site', () => {
-  it('Python (well-served by docs.python.org) writes a usable plan directory', async () => {
-    const fs = new MemoryFileSystem()
-    const result = await generatePlan(fixturePlan, '/plans', {
+  let baseDir: string
+
+  beforeEach(async () => {
+    baseDir = await mkdtemp(join(tmpdir(), 'study-plan-demo-'))
+  })
+
+  afterEach(async () => {
+    await rm(baseDir, { recursive: true, force: true })
+  })
+
+  // The demo runs against the real filesystem with the default adapter: the
+  // point of the demo is that a plan directory a learner can open actually
+  // lands on disk, which an in-memory adapter cannot show.
+  it('Python (well-served by docs.python.org) writes a usable plan directory to disk', async () => {
+    const result = await generatePlan(fixturePlan, baseDir, {
       fetch: fetchImpl,
       searchReplacement: noReplacement,
       now: fixedClock,
-      fs,
     })
 
-    const planJson = fs.read(result.planPath)
-    const written = JSON.parse(planJson) as PlanData
+    expectPathEndsWith(result.planDir, 'python-programming')
+
+    const written = JSON.parse(await readFile(result.planPath, 'utf8')) as PlanData
 
     // Demo: durable-tier only. Python's docs.python.org is the canonical
     // preferred-tier source; this run should not have discovered any
@@ -234,25 +276,34 @@ describe('end-to-end demo: a well-served subject produces a usable site', () => 
       }
     }
 
-    // Demo: every session completable with free materials alone.
+    // Demo: every session completable with free materials alone, and its
+    // materials fit the budget it claims.
     for (const session of written.sessions) {
       expect(session.materials.some((m) => !m.paid)).toBe(true)
+      const materialMinutes = session.materials.reduce((t, m) => t + m.estimatedDuration, 0)
+      expect(materialMinutes).toBeLessThanOrEqual(session.estimatedTime)
+      expect(session.estimatedTime).toBeLessThanOrEqual(written.meta.hoursPerDay * 60)
     }
 
-    // Demo: every session's time budget fits within the stated hours/day.
-    const hoursPerDay = written.meta.hoursPerDay
+    // Demo: CAFE — the highest-frequency units recur across the sprint.
+    const sessionsPerUnit = new Map<string, number>()
     for (const session of written.sessions) {
-      expect(session.estimatedTime).toBeLessThanOrEqual(hoursPerDay * 60)
+      for (const unit of new Set(session.highFrequencyUnits)) {
+        sessionsPerUnit.set(unit, (sessionsPerUnit.get(unit) ?? 0) + 1)
+      }
     }
+    expect(Math.max(...sessionsPerUnit.values())).toBeGreaterThanOrEqual(3)
 
     // Demo: consolidation slots at 6 and 11, identifiable as such.
     expect(written.sessions[5].consolidation).toBe(true)
     expect(written.sessions[10].consolidation).toBe(true)
     expect(written.sessions[0].consolidation).toBeFalsy()
 
-    // Demo: the rendered page is genuinely usable — all 14 sessions in
-    // order, click-to-expand, complete HTML document.
-    const html = fs.read(result.htmlPath)
+    // Demo: the page read back off disk is genuinely usable — all 14
+    // sessions in order, click-to-expand, no network reference at view time.
+    const html = await readFile(result.htmlPath, 'utf8')
+    expect(html).not.toMatch(/<link/i)
+    expect(html).not.toMatch(/<script[^>]*src\s*=/i)
     const doc = new JSDOM(html, { runScripts: 'dangerously' }).window.document
     const rows = Array.from(doc.querySelectorAll('.session'))
     expect(rows.length).toBe(14)
@@ -261,5 +312,16 @@ describe('end-to-end demo: a well-served subject produces a usable site', () => 
     )
     const detail = rows[1].querySelector('.session-detail') as HTMLElement
     expect(detail.hidden).toBe(false)
+  })
+
+  it('a second run for the same subject lands beside the first on disk', async () => {
+    const opts = { fetch: fetchImpl, searchReplacement: noReplacement, now: fixedClock }
+    const first = await generatePlan(fixturePlan, baseDir, opts)
+    const second = await generatePlan(fixturePlan, baseDir, opts)
+
+    expectPathEndsWith(first.planDir, 'python-programming')
+    expectPathEndsWith(second.planDir, 'python-programming-2')
+    await expect(readFile(first.planPath, 'utf8')).resolves.toContain('"subject"')
+    await expect(readFile(second.planPath, 'utf8')).resolves.toContain('"subject"')
   })
 })

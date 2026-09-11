@@ -96,4 +96,53 @@ describe('validatePlan', () => {
     const errors = validatePlan(plan)
     expect(errors.some((e) => e.includes('exceeds hoursPerDay budget'))).toBe(true)
   })
+  it('accepts an empty stakes field, which the learner fills in on the page', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.stakes = ''
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('rejects a plan whose stakes field is missing entirely', () => {
+    const plan = clonePlan(fixturePlan)
+    // @ts-expect-error deliberately malformed for the test
+    delete plan.stakes
+    const errors = validatePlan(plan)
+    expect(errors).toContain('stakes is required')
+  })
+
+  it('rejects a session that names no high-frequency units to drill', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].highFrequencyUnits = []
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes('session 1 must name at least one high-frequency unit'))).toBe(true)
+  })
+
+  it('rejects a plan where no unit is repeated across sessions', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions.forEach((s, i) => {
+      s.highFrequencyUnits = [`unit only used by session ${i + 1}`]
+    })
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes('no high-frequency unit is drilled in at least'))).toBe(true)
+  })
+
+  it('accepts a plan where a unit recurs across enough sessions', () => {
+    expect(validatePlan(fixturePlan)).toEqual([])
+  })
+
+  it('rejects a material that is not from the preferred durable tier', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].sourceType = 'off-list'
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes('session 1 material must come from the preferred durable tier'))).toBe(true)
+  })
+
+  it("rejects a session whose materials total more than the session's stated time", () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].estimatedTime = 10
+    const errors = validatePlan(plan)
+    expect(
+      errors.some((e) => e.includes('session 1 materials total') && e.includes('exceeds'))
+    ).toBe(true)
+  })
 })

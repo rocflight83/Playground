@@ -1,4 +1,4 @@
-import type { Material, PlanData, VerificationRecord } from './plan-types'
+import type { Material, PlanData, VerificationRecord } from './plan-types.ts'
 
 const MAX_REPLACEMENT_ATTEMPTS = 2
 

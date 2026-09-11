@@ -1,5 +1,9 @@
-import type { PlanData } from './plan-types'
-import { CONSOLIDATION_SLOTS } from './plan-types'
+import type { PlanData } from './plan-types.ts'
+import {
+  CONSOLIDATION_SLOTS,
+  MIN_REPEATED_UNIT_SESSIONS,
+  consolidationSlotsDescription,
+} from './plan-types.ts'
 
 export type ValidationError = string
 
@@ -10,6 +14,11 @@ function require_(errors: ValidationError[], value: unknown, message: string): v
 /**
  * Validate a plan document against all structural invariants.
  * Returns an array of errors, empty when the plan is valid.
+ *
+ * The input is typed `PlanData` for callers' convenience, but the values this
+ * gate actually sees come from generated or hand-edited JSON. The runtime
+ * `typeof` checks below are therefore load-bearing, not redundant with the
+ * type: this is the boundary where untrusted data becomes trusted.
  */
 export function validatePlan(plan: PlanData): ValidationError[] {
   const errors: ValidationError[] = []
@@ -19,7 +28,9 @@ export function validatePlan(plan: PlanData): ValidationError[] {
   require_(errors, plan.meta.currentLevel, 'meta.currentLevel is required')
   require_(errors, plan.meta.hoursPerDay, 'meta.hoursPerDay is required')
   require_(errors, plan.meta.generatedAt, 'meta.generatedAt is required')
-  require_(errors, plan.stakes, 'stakes is required')
+  // Stakes are the learner's to write, on the page, after generation. The
+  // field must exist; it is empty at generation time by design.
+  require_(errors, typeof plan.stakes === 'string', 'stakes is required')
   require_(errors, plan.phases?.length, 'phases is required and must not be empty')
   require_(errors, plan.sessions?.length, 'sessions is required and must not be empty')
 
@@ -79,10 +90,36 @@ export function validatePlan(plan: PlanData): ValidationError[] {
         errors.push(`session ${session.number} paid material must have a positive price`)
       }
       require_(errors, material.verification, `session ${session.number} material verification is required`)
+      // Ticket 04 draws from the durable tier only; off-list admission is
+      // ticket 05's job, and verification already knows how to vet one.
+      if (material.sourceType !== 'preferred') {
+        errors.push(
+          `session ${session.number} material must come from the preferred durable tier, found '${material.sourceType}'`
+        )
+      }
+    }
+
+    // CAFE compression: a session's materials must fit the artifact's time
+    // budget, not merely be declared to. Without this, estimatedTime is a
+    // claim rather than a constraint.
+    const materialMinutes = (session.materials ?? []).reduce(
+      (total, m) => total + (typeof m.estimatedDuration === 'number' ? m.estimatedDuration : 0),
+      0
+    )
+    if (typeof session.estimatedTime === 'number' && materialMinutes > session.estimatedTime) {
+      errors.push(
+        `session ${session.number} materials total ${materialMinutes} min, which exceeds its estimatedTime of ${session.estimatedTime} min`
+      )
+    }
+
+    // CAFE repetition: every session names the minimal effective units it
+    // drills, so the plan-wide recurrence check below has something to see.
+    if (!session.highFrequencyUnits || session.highFrequencyUnits.length === 0) {
+      errors.push(`session ${session.number} must name at least one high-frequency unit it drills`)
     }
     if (session.consolidation && !CONSOLIDATION_SLOTS.has(session.number)) {
       errors.push(
-        `session ${session.number} is marked consolidation but consolidation slots are reserved for sessions 6 and 11`
+        `session ${session.number} is marked consolidation but consolidation slots are reserved for sessions ${consolidationSlotsDescription()}`
       )
     }
     if (CONSOLIDATION_SLOTS.has(session.number) && !session.consolidation) {
@@ -117,6 +154,21 @@ export function validatePlan(plan: PlanData): ValidationError[] {
   const paidMaterials = allMaterials.filter((m) => m.paid)
   if (paidMaterials.length > 1) {
     errors.push(`plan must have at most one paid material, found ${paidMaterials.length}`)
+  }
+
+  // CAFE repetition: the highest-frequency units must recur across sessions
+  // rather than each session introducing disposable vocabulary.
+  const sessionsPerUnit = new Map<string, number>()
+  for (const session of sessions) {
+    for (const unit of new Set(session.highFrequencyUnits ?? [])) {
+      sessionsPerUnit.set(unit, (sessionsPerUnit.get(unit) ?? 0) + 1)
+    }
+  }
+  const repeated = [...sessionsPerUnit.values()].some((count) => count >= MIN_REPEATED_UNIT_SESSIONS)
+  if (sessionsPerUnit.size > 0 && !repeated) {
+    errors.push(
+      `no high-frequency unit is drilled in at least ${MIN_REPEATED_UNIT_SESSIONS} sessions; CAFE requires the highest-frequency units to repeat across the plan`
+    )
   }
 
   if (!plan.disssPreamble) {

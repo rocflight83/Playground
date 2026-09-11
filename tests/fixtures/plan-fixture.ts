@@ -66,7 +66,8 @@ export const fixturePlan: PlanData = {
         },
       ],
       selfCheck: 'Can I write a script that prints sys.argv values?',
-      estimatedTime: 50,
+      estimatedTime: 60,
+      highFrequencyUnits: ['syntax fundamentals', 'module structure'],
     },
     {
       number: 2,
@@ -93,6 +94,7 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I use if/else and loops to filter files by extension?',
       estimatedTime: 60,
+      highFrequencyUnits: ['control flow', 'data structures', 'syntax fundamentals'],
     },
     {
       number: 3,
@@ -110,6 +112,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I define and call a function with parameters?',
       estimatedTime: 35,
+      highFrequencyUnits: ['module structure', 'syntax fundamentals'],
+      encodingHook:
+        'A module is a file; a package is a folder with an __init__.py. Nothing more.',
     },
     {
       number: 4,
@@ -127,6 +132,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I read a file and write its contents to a new file?',
       estimatedTime: 40,
+      highFrequencyUnits: ['file I/O', 'control flow'],
+      encodingHook:
+        'Every open() is a with-block — the indentation is the lifetime of the file.',
     },
     {
       number: 5,
@@ -144,6 +152,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I use argparse to parse --name and --output flags?',
       estimatedTime: 45,
+      highFrequencyUnits: ['argument parsing', 'module structure'],
+      encodingHook:
+        'add_argument once per flag, parse_args once per program.',
     },
     {
       number: 6,
@@ -163,6 +174,7 @@ export const fixturePlan: PlanData = {
       selfCheck:
         'Have I caught up on missed fundamentals work and re-read the most-used syntax sections from sessions 1–5?',
       estimatedTime: 60,
+      highFrequencyUnits: ['argument parsing', 'file I/O', 'module structure', 'control flow'],
       consolidation: true,
     },
     {
@@ -181,6 +193,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I write and run a basic pytest test?',
       estimatedTime: 45,
+      highFrequencyUnits: ['testing', 'module structure'],
+      encodingHook:
+        'A test is a function named test_ that asserts. pytest finds the rest.',
     },
     {
       number: 8,
@@ -198,6 +213,7 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I create a valid pyproject.toml?',
       estimatedTime: 40,
+      highFrequencyUnits: ['packaging', 'module structure'],
     },
     {
       number: 9,
@@ -215,6 +231,7 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I build a wheel with python -m build?',
       estimatedTime: 50,
+      highFrequencyUnits: ['packaging', 'virtual environments'],
     },
     {
       number: 10,
@@ -232,6 +249,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I install the package into a fresh venv and import it?',
       estimatedTime: 45,
+      highFrequencyUnits: ['virtual environments', 'packaging'],
+      encodingHook:
+        'A venv is a folder with its own python and its own site-packages. Activation only edits PATH.',
     },
     {
       number: 11,
@@ -251,6 +271,7 @@ export const fixturePlan: PlanData = {
       selfCheck:
         'Have I caught up on missed application work and re-read the most-used application sections from sessions 1–10?',
       estimatedTime: 60,
+      highFrequencyUnits: ['packaging', 'virtual environments', 'testing', 'argument parsing'],
       consolidation: true,
     },
     {
@@ -277,6 +298,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I invoke two different subcommands from one CLI?',
       estimatedTime: 55,
+      highFrequencyUnits: ['argument parsing', 'module structure'],
+      encodingHook:
+        'Subcommands are just a parser holding more parsers.',
     },
     {
       number: 13,
@@ -294,6 +318,9 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Does the CLI log errors and exit cleanly on bad input?',
       estimatedTime: 40,
+      highFrequencyUnits: ['error handling', 'control flow', 'testing'],
+      encodingHook:
+        'Raise where you know what broke; catch where you know what to do about it.',
     },
     {
       number: 14,
@@ -311,6 +338,7 @@ export const fixturePlan: PlanData = {
       ],
       selfCheck: 'Can I install and run my finished CLI tool from a clean environment?',
       estimatedTime: 120,
+      highFrequencyUnits: ['packaging', 'argument parsing', 'testing', 'virtual environments'],
     },
   ],
 }

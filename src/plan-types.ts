@@ -20,7 +20,15 @@ export interface Session {
   materials: Material[]
   selfCheck: string
   estimatedTime: number
-  /** True for sessions 6 and 11, which are catch-up / spaced-review slots. */
+  /**
+   * CAFE — the minimal effective units this session drills, named as they are
+   * in the DISSS deconstruction. The highest-frequency units recur across
+   * sessions; `validatePlan` enforces that at least one does.
+   */
+  highFrequencyUnits: string[]
+  /** CAFE — a mnemonic or framing that makes this session's material stick. Present only where the material benefits. */
+  encodingHook?: string
+  /** True for the sessions in `CONSOLIDATION_SLOTS`, which are catch-up / spaced-review slots. */
   consolidation?: boolean
 }
 
@@ -56,5 +64,23 @@ export interface PlanData {
   sessions: Session[]
 }
 
-/** The session numbers reserved for consolidation (catch-up / spaced-review) slots. */
+/**
+ * The session numbers reserved for consolidation (catch-up / spaced-review) slots.
+ *
+ * `.claude/skills/study-plan/SKILL.md` states this policy in prose, because a
+ * prompt cannot import a constant. Change either of the policy constants here
+ * and that file needs the same edit.
+ */
 export const CONSOLIDATION_SLOTS: ReadonlySet<number> = new Set([6, 11])
+
+/** The consolidation slots as prose, so error messages and docs cannot drift from the policy. */
+export function consolidationSlotsDescription(): string {
+  return [...CONSOLIDATION_SLOTS].sort((a, b) => a - b).join(' and ')
+}
+
+/**
+ * A unit must be drilled in at least this many sessions for the plan to
+ * satisfy CAFE's repetition requirement: the highest-frequency minimal
+ * effective units recur across sessions rather than being touched once.
+ */
+export const MIN_REPEATED_UNIT_SESSIONS = 3

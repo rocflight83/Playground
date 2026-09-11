@@ -1,4 +1,4 @@
-import type { Material, PlanData, Session } from './plan-types'
+import type { Material, PlanData, Session } from './plan-types.ts'
 
 function esc(value: string): string {
   return value
@@ -48,6 +48,8 @@ h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
 .session-consolidation { display: inline-block; padding: .1rem .5rem; background: var(--band); color: var(--accent); border: 1px solid var(--line); border-radius: 999px; font-size: .8rem; font-weight: 600; }
 .self-check { margin: .6rem 0; padding: .5rem .7rem; background: var(--band); border-radius: 6px; overflow-wrap: break-word; }
 .self-check-label { font-weight: 600; }
+.session-units, .session-hook { margin: .5rem 0; font-size: .9rem; color: var(--muted); overflow-wrap: break-word; }
+.session-units-label, .session-hook-label { font-weight: 600; color: var(--ink); }
 .notes-label { display: block; font-weight: 600; margin-top: .6rem; }
 .notes-area { width: 100%; min-height: 5rem; margin-top: .3rem; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: var(--surface); color: inherit; }
 .progress-indicator { position: fixed; bottom: 0; left: 0; right: 0; background: var(--band); padding: .5rem; text-align: center; border-top: 1px solid var(--line); font-size: .9rem; }
@@ -346,22 +348,38 @@ function renderSession(session: Session): string {
   const warning = hasUnresolved
     ? '<span class="session-warning">⚠ A material for this session could not be verified</span>'
     : ''
+  // One branch, both coupled outputs: the badge a reader sees and the
+  // attribute the page's script and the tests select on cannot drift apart.
   const consolidation = session.consolidation
-    ? '<span class="session-consolidation">Consolidation</span>'
+    ? {
+        attribute: ' data-consolidation="true"',
+        badge: '<span class="session-consolidation">Consolidation</span>',
+      }
+    : { attribute: '', badge: '' }
+  const units =
+    '<p class="session-units"><span class="session-units-label">Drills:</span> ' +
+    session.highFrequencyUnits.map(esc).join(', ') +
+    '</p>'
+  const hook = session.encodingHook
+    ? '<p class="session-hook"><span class="session-hook-label">Encoding hook:</span> ' +
+      esc(session.encodingHook) +
+      '</p>'
     : ''
   return (
     '<section class="session" data-session="' + num + '"' +
-    (session.consolidation ? ' data-consolidation="true"' : '') +
+    consolidation.attribute +
     '>' +
     '<div class="session-summary" role="button" tabindex="0" aria-expanded="false" aria-controls="' + detailId + '">' +
     '<input class="session-check" type="checkbox" data-session="' + num + '" aria-label="Mark session ' + num + ' complete">' +
     '<span class="session-number">' + num + '</span>' +
     '<span class="session-title">' + esc(session.title) + '</span>' +
-    consolidation +
+    consolidation.badge +
     '<span class="session-artifact">' + esc(session.artifactOneLiner) + '</span>' +
     warning +
     '</div>' +
     '<div class="session-detail" id="' + detailId + '" hidden>' +
+    units +
+    hook +
     '<ul class="materials">' + materials + '</ul>' +
     '<p class="self-check"><span class="self-check-label">Self-check:</span> ' + esc(session.selfCheck) + '</p>' +
     '<label class="notes-label" for="notes-' + num + '">Notes' +
