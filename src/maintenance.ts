@@ -1,7 +1,7 @@
 import { access, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ValidationFailedError, type FileSystemAdapter } from './generate.ts'
-import type { PlanData } from './plan-types.ts'
+import type { PlanData, Session } from './plan-types.ts'
 import { renderPlan } from './renderer.ts'
 import { validatePlan } from './validation.ts'
 import type { VerificationReport, VerifyPlanOptions } from './verification.ts'
@@ -33,7 +33,7 @@ const nodeFileSystem: FileSystemAdapter = {
     }
   },
   mkdir: async () => {
-    throw new Error('reverifyPlanDir does not create directories; pass an existing plan directory')
+    throw new Error('maintenance seams do not create directories; pass an existing plan directory')
   },
   writeFile: async (path, content) => {
     const { writeFile: write } = await import('node:fs/promises')
@@ -74,6 +74,76 @@ export async function reverifyPlanDir(
 
   const outputErrors = validatePlan(verified)
   if (outputErrors.length > 0) throw new ValidationFailedError(outputErrors)
+
+  await fs.writeFile(planPath, JSON.stringify(verified, null, 2))
+  await fs.writeFile(htmlPath, renderPlan(verified))
+
+  return { planDir, planPath, htmlPath, plan: verified, report }
+}
+
+/**
+ * Redo mode: replace one named session in an existing plan directory, then
+ * verify only that session's material URLs and re-render the page in place.
+ *
+ * The replacement may change any session field — title, artifact, self-check,
+ * materials, CAFE fields, consolidation flag — but the session **number**
+ * must equal `sessionNumber`. Number is what preserves browser progress: the
+ * page keys checkboxes, notes and stakes by it, so a replacement that keeps
+ * the same number restores its learner's state on the next page load.
+ *
+ * Every other plan field is preserved. The other thirteen sessions' parsed
+ * data, verification records and timestamps are not fetched or changed;
+ * metadata, stakes, phases, DISSS preamble and the entire plan shape ride
+ * through untouched. The directory name is never suffixed.
+ *
+ * The write gate is strict: no file is written until the merged plan
+ * validates before the network call, the verified merged plan validates
+ * again, and the replacement's number matches the request.
+ *
+ * The replacement is structured JSON supplied by the skill. The deterministic
+ * shell never invents titles, artifacts, prose, or sources.
+ */
+export async function redoSession(
+  planDir: string,
+  sessionNumber: number,
+  replacement: Session,
+  options: MaintenanceOptions
+): Promise<MaintenanceResult> {
+  if (replacement.number !== sessionNumber) {
+    throw new Error(
+      `replacement session number ${replacement.number} does not match requested ${sessionNumber}; ` +
+        'the session number is what preserves browser progress and must not change'
+    )
+  }
+
+  const fs = options.fs ?? nodeFileSystem
+  const planPath = join(planDir, 'plan.json')
+  const htmlPath = join(planDir, 'index.html')
+
+  const raw = await fs.readFile(planPath)
+  const original = JSON.parse(raw) as PlanData
+
+  const inputErrors = validatePlan(original)
+  if (inputErrors.length > 0) throw new ValidationFailedError(inputErrors)
+
+  const merged: PlanData = {
+    ...original,
+    sessions: original.sessions.map((session) =>
+      session.number === sessionNumber ? replacement : session
+    ),
+  }
+
+  const mergedErrors = validatePlan(merged)
+  if (mergedErrors.length > 0) throw new ValidationFailedError(mergedErrors)
+
+  const { plan: verified, report } = await verifyPlan(merged, {
+    ...options,
+    keepOutlierStoriesOnFailure: true,
+    sessionNumbers: [sessionNumber],
+  })
+
+  const verifiedErrors = validatePlan(verified)
+  if (verifiedErrors.length > 0) throw new ValidationFailedError(verifiedErrors)
 
   await fs.writeFile(planPath, JSON.stringify(verified, null, 2))
   await fs.writeFile(htmlPath, renderPlan(verified))

@@ -41,6 +41,15 @@ export interface VerifyPlanOptions {
    * learner has already been reading.
    */
   keepOutlierStoriesOnFailure?: boolean
+  /**
+   * Session numbers to verify. Defaults to verifying every session. When set,
+   * only materials from these sessions are fetched and re-timestamped; other
+   * session objects are passed through unchanged so their existing
+   * verification records survive intact. Used by single-session redo, where
+   * changing the other thirteen sessions' timestamps would violate the
+   * preservation contract.
+   */
+  sessionNumbers?: Iterable<number>
 }
 
 export interface MaterialVerificationOutcome {
@@ -209,14 +218,27 @@ function selectDefaultAnchors(plan: PlanData): string[] {
  * Verify every material in a plan against injected fetch and replacement-search
  * dependencies. Returns a new plan with refreshed verification records (the
  * input plan is not mutated) plus a report of every outcome.
+ *
+ * When `opts.sessionNumbers` is set, only those sessions' materials are
+ * fetched and re-timestamped; the other session objects pass through
+ * unchanged so their existing verification records survive intact. Outlier
+ * stories are phase-level and not session-scoped, so a session filter
+ * excludes them too: their verification records ride through unchanged,
+ * matching the preservation contract for the other sessions.
  */
 export async function verifyPlan(
   plan: PlanData,
   opts: VerifyPlanOptions
 ): Promise<{ plan: PlanData; report: VerificationReport }> {
   const anchorUrls = new Set(opts.anchorUrls ?? selectDefaultAnchors(plan))
+  const targetNumbers = opts.sessionNumbers
+    ? new Set(opts.sessionNumbers)
+    : null
   const sessionResults = await Promise.all(
     plan.sessions.map(async (session) => {
+      if (targetNumbers && !targetNumbers.has(session.number)) {
+        return { session, outcomes: [] as VerificationOutcome[] }
+      }
       const results = await Promise.all(
         session.materials.map(async (material) => {
           const isAnchor = anchorUrls.has(material.url)
@@ -235,7 +257,10 @@ export async function verifyPlan(
   const verifiedPhases = await Promise.all(
     plan.phases.map(async (phase, phaseIndex) => {
       const story = phase.outlierStory
-      if (!story) return phase
+      // Outlier stories are phase-level, not session-level, so a
+      // session-numbers filter excludes them too — "only the replacement
+      // session's materials" means what it says.
+      if (!story || targetNumbers) return phase
 
       let healthy = false
       try {

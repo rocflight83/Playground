@@ -361,4 +361,65 @@ describe('verifyPlan', () => {
     expect(story).toBeDefined()
     expect(story?.verification?.status).toBe('unresolved-after-retries')
   })
+
+  it('verifies only the chosen sessions when sessionNumbers is set and passes the rest through untouched', async () => {
+    const plan = clonePlan(fixturePlan)
+    // Stamp session 3's verification with a known timestamp so we can detect
+    // any later mutation; stamp other sessions too so the assertion covers
+    // "unchanged", not "coincidentally equal".
+    const staleTimestamp = '2025-01-01T00:00:00.000Z'
+    const freshTimestamp = '2026-06-01T00:00:00.000Z'
+    const staleRecord = { status: 'verified-by-status' as const, checkedAt: staleTimestamp }
+    const freshRecord = { status: 'verified-by-content' as const, checkedAt: freshTimestamp }
+    for (const session of plan.sessions) {
+      if (session.number === 3) {
+        for (const material of session.materials) material.verification = freshRecord
+      } else {
+        for (const material of session.materials) material.verification = staleRecord
+      }
+    }
+    // Snapshot every session's material URLs plus the chosen session number so
+    // we can detect that the wrong session got fetched.
+    const fetchedUrls: string[] = []
+    const fetchImpl = async (url: string): Promise<FetchResponse> => {
+      fetchedUrls.push(url)
+      return ok()
+    }
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      now: () => freshTimestamp,
+      sessionNumbers: [3],
+    })
+
+    // Only session 3's material URLs were fetched.
+    const expectedUrls = plan.sessions.find((session) => session.number === 3)!.materials.map((m) => m.url)
+    expect(fetchedUrls.sort()).toEqual(expectedUrls.sort())
+
+    // The other thirteen sessions' verification records are exactly what we
+    // seeded them with — same objects, same timestamps, no fetch side effects.
+    for (const session of result.sessions) {
+      if (session.number === 3) continue
+      for (const material of session.materials) {
+        expect(material.verification).toEqual(staleRecord)
+      }
+    }
+
+    // Session 3's verification records refresh to the new timestamp.
+    for (const material of result.sessions.find((session) => session.number === 3)!.materials) {
+      expect(material.verification).toEqual({ status: 'verified-by-status', checkedAt: freshTimestamp })
+    }
+
+    // Outlier-story citations are phase-level, so a session filter excludes
+    // them — no story outcome appears in the report and the citation URL was
+    // not fetched.
+    expect(report.outcomes.find((outcome) => outcome.kind === 'outlier-story')).toBeUndefined()
+    expect(fetchedUrls).not.toContain(plan.phases[0].outlierStory!.citation)
+
+    // The report carries the targeted session's material outcomes only.
+    const materialOutcomes = report.outcomes.filter((outcome) => outcome.kind === 'material')
+    expect(materialOutcomes.length).toBe(expectedUrls.length)
+    expect(materialOutcomes.every((outcome) => outcome.sessionNumber === 3)).toBe(true)
+  })
 })

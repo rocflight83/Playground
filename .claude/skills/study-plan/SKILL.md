@@ -221,6 +221,67 @@ re-verification does not regenerate that storage, only the `plan.json` and
 directory) is also a supported workflow but produces a fresh directory; use
 `npm run verify` when the goal is to keep the existing one.
 
+## Redo mode
+
+When a single session turns out to be wrong — the artifact does not deliver,
+the materials are wrong, the self-check is a moving target — re-plan that
+session against the plan's current honest target (or stated target when no
+honest target exists), level, hours, DISSS units, and consolidation policy,
+and replace just it in place. The other thirteen sessions, the learner's
+browser progress, the directory name, and every other plan field all stay
+untouched, because progress is keyed by session number and the replacement
+preserves it.
+
+```
+npm run redo -- <planDir> <sessionNumber> <replacement.json>
+```
+
+- `<planDir>` is the directory the generator wrote (`baseDir/<subject-slug>/`).
+- `<sessionNumber>` is the integer session number being replaced (1–14).
+- `<replacement.json>` is a `Session` document (see `Session` in
+  [`src/plan-types.ts`](../../../src/plan-types.ts)) whose `number` equals
+  `<sessionNumber>`. The replacement may change title, artifact, self-check,
+  materials, estimated time, CAFE fields, and the consolidation flag. **Do not
+  rewrite the other sessions** — write only the one replacement file.
+- HTML is not accepted: the deterministic shell only ever works from
+  structured plan data.
+
+Re-plan the one session:
+
+- Read the existing `plan.json` in the target directory and the selected
+  session. The replacement is shaped to fit the plan the generator built:
+  its DISSS units come from the same deconstruction, its level matches the
+  stated current level, its time budget fits `hoursPerDay`, and its
+  consolidation flag (if any) follows the same session-6 and session-11
+  rule. Aim the replacement at the plan's current honest target (or stated
+  target when no honest target exists), keeping that level, hours, DISSS
+  units, and consolidation policy.
+- Keep exactly one artifact, one binary self-check, and a free path to
+  completion (one free material), same as a generated session.
+- Source and verify only the replacement session's materials: the command
+  re-verifies those URLs against the live web before re-rendering. Other
+  sessions' links are not re-checked and their timestamps are not refreshed,
+  so their previous verification records survive.
+
+Write the temporary `replacement.json`, then run the command. Read the JSON
+it prints:
+
+- `"ok": true` — the directory was updated in place. Tell the learner the
+  plan now contains the new session, and report any `unresolved` entries
+  (links that failed verification — they stay on the page with a visible
+  "⚠ Unverified material" warning, the same affordance as a rotted link in
+  verify mode).
+- `"ok": false` with `validationErrors` — the merged plan (the existing
+  twelve untouched sessions plus the replacement) failed validation.
+  Fix the listed errors and re-run. Nothing was written.
+- `"ok": false` with `error` — the directory or replacement file is wrong
+  (missing `plan.json`, replacement's session number does not match,
+  replacement file looks like HTML, JSON parse error, …). Nothing was
+  written; fix and re-run.
+
+The skill writes the replacement JSON and the plan data only. It never
+writes HTML, and it never touches the other thirteen sessions.
+
 ## Preferred sources
 
 Durable, well-known, unlikely to rot inside a two-week sprint:

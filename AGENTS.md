@@ -9,13 +9,16 @@ structured **plan data** into a single self-contained HTML page and, later,
 verifies links. The generator never emits HTML directly — data and rendering
 are strictly separated.
 
-Current state: tickets 01–07 are in place — the renderer seam, progress
+Current state: tickets 01–08 are in place — the renderer seam, progress
 state, validation + verification, generate mode, sourcing depth
 (tiered discovery with off-list admission), scope honesty (a reframed
 target and its scope note are validated as a pair and rendered together),
-and outlier stories (real, citable, removable when uncited). Verify-on-demand
-mode is in place via `src/maintenance.ts` and `npm run verify`; the
-per-session redo mode is still the next open ticket (see
+outlier stories (real, citable, removable when uncited), and
+verify-on-demand mode (`src/maintenance.ts` + `npm run verify`). Ticket 09
+adds per-session redo mode: a session-numbers filter on `verifyPlan` plus
+`redoSession` in `src/maintenance.ts` and `npm run redo` so one named
+session can be replaced in place while the other thirteen, browser
+progress, and the directory name all survive untouched (see
 `.scratch/study-plan-generator/`).
 
 ## Build and test commands
@@ -31,6 +34,11 @@ carry an explicit `.ts` extension: Node's ESM resolver requires it.
 - `npm run verify -- <planDir>` — verify mode: re-check every URL in an
   existing plan directory and rewrite its `plan.json` and `index.html` in
   place (never allocates a new directory)
+- `npm run redo -- <planDir> <sessionNumber> <replacement.json>` — redo mode:
+  splice one replacement session into an existing plan directory, verify only
+  that session's links, and rewrite `plan.json` and `index.html` in place.
+  The other thirteen sessions, browser progress, and the directory name all
+  survive untouched.
 - `npm test` — run the whole suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (run this regularly; it must stay clean)
@@ -83,14 +91,17 @@ be followed downstream):
   reported, not just the first. This is the boundary where generated or
   hand-edited JSON becomes trusted data, so its runtime type checks are
   load-bearing rather than redundant with the `PlanData` type.
-- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure? })`.
+- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure?, sessionNumbers? })`.
   Returns a new plan with refreshed verification records plus a report.
   Replaces failed links via `searchReplacement` up to two attempts per
   slot, then records the slot `unresolved-after-retries`. Outlier-story
   citations are recorded on the story as `verification` records; when
   `keepOutlierStoriesOnFailure` is set (maintenance mode), a story whose
   citation fails is kept with `verification.status = 'unresolved-after-retries'`
-  rather than silently removed, so rot is visible on the page.
+  rather than silently removed, so rot is visible on the page. When
+  `sessionNumbers` is set, only those sessions' materials are fetched and
+  re-timestamped; other session objects (and outlier-story citations) pass
+  through unchanged, which is what single-session redo relies on.
 - `src/generate.ts` — `generatePlan(plan, baseDir, { fetch, searchReplacement, now?, fs? })`.
   Validates, verifies, then writes `plan.json` and `index.html` into
   `baseDir/<slug>/`, falling back to `<slug>-2`, `-3`, … when that directory
@@ -103,7 +114,13 @@ be followed downstream):
   **same** directory. The directory name is never suffixed, so a learner's
   browser progress (keyed by session number) survives untouched. Unresolved
   materials keep their original title and URL with status
-  `unresolved-after-retries`; the renderer surfaces the warning.
+  `unresolved-after-retries`; the renderer surfaces the warning. Also exports
+  `redoSession(planDir, sessionNumber, replacement, { fetch, searchReplacement, now?, fs? })`:
+  reads `plan.json`, splices `replacement` (whose `number` must equal
+  `sessionNumber`) into a fresh copy, validates the merged plan, re-verifies
+  only the targeted session's materials, validates the verified plan, and
+  writes both files in place. The other thirteen sessions, the directory
+  name, and browser progress all stay untouched.
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,
@@ -112,6 +129,11 @@ be followed downstream):
 - `scripts/verify.ts` — the command behind `npm run verify`. Wires the real
   `fetch` into `reverifyPlanDir` and prints a JSON summary in the same shape
   as generate mode.
+- `scripts/redo.ts` — the command behind `npm run redo`. Wires the real
+  `fetch` into `redoSession` and prints a JSON summary in the same shape as
+  generate mode. The replacement is read from a JSON file (HTML is rejected
+  with a JSON error), and the supplied session number must match
+  `replacement.number` for the call to make it past argument validation.
 
 ## Security considerations
 

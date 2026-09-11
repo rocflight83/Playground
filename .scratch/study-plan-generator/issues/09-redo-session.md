@@ -16,7 +16,7 @@ remains valid because it is keyed by session number.
 
 **User stories covered:** 57. Partially covered, alongside ticket 08: 58.
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Public contract
 
@@ -174,3 +174,26 @@ request.
 - Typecheck and the full suite pass.
 
 ## Comments
+
+- 2026-09-11 — `redoSession` added in `src/maintenance.ts` plus
+  `verifyPlan`'s new optional `sessionNumbers` filter. The seam reads the
+  existing `plan.json`, validates the replacement's session number matches
+  the request, splices the replacement into a fresh plan, validates the
+  merged plan, re-verifies only the targeted session's materials, validates
+  the verified plan, and writes both files in place. The other thirteen
+  sessions' parsed data, verification records, and timestamps are not
+  fetched or changed; browser progress keyed by session number is preserved
+  because the replacement keeps the same number. `npm run redo` CLI in
+  `scripts/redo.ts` mirrors verify mode's argument shape, rejects HTML and
+  number-mismatched replacements with JSON errors, and prints a JSON summary
+  in the generate-mode shape. Skill instructions add a Redo mode section;
+  `AGENTS.md` lists the new command and module. Tests cover: replacement
+  changes only the targeted session, replacement materials are fetched and
+  verification records refreshed, failing URLs remain as `unresolved-after-retries`
+  with the rendered warning, the other thirteen sessions are not fetched or
+  re-timestamped, wrong-number and invalid-merged-plan rejections happen
+  before any write, rendered page carries replacement content and no stale
+  target-session material, browser progress restoration by session number
+  survives re-render, plus the full CLI surface (in-place summary, usage,
+  empty plan dir, HTML rejection, number mismatch, integer validation).
+  Typecheck clean, 152 tests pass.

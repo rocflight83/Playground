@@ -3,9 +3,9 @@ import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { PlanData } from '../src/plan-types'
+import type { PlanData, Session } from '../src/plan-types'
 import { type FileSystemAdapter, ValidationFailedError, generatePlan } from '../src/generate'
-import { reverifyPlanDir } from '../src/maintenance'
+import { redoSession, reverifyPlanDir } from '../src/maintenance'
 import type { FetchLike, ReplacementCandidate } from '../src/verification'
 import { fixturePlan } from './fixtures/plan-fixture'
 
@@ -405,6 +405,360 @@ describe('end-to-end demo: re-verification updates an on-disk plan directory in 
   })
 })
 
+/**
+ * Build a session whose data differs from the fixture's session 3 in every
+ * field the redo is allowed to change. Materials carry `verification`
+ * placeholders that the seam must overwrite, never preserve.
+ */
+function replacementSession3(): Session {
+  return {
+    number: 3,
+    title: 'Functions and Modules — revised',
+    artifactOneLiner: 'Build a callable library module from scratch',
+    materials: [
+      {
+        title: 'Real Python - Modules and Packages',
+        url: 'https://realpython.com/python-modules-packages/',
+        sourceType: 'preferred',
+        estimatedDuration: 30,
+        paid: false,
+        verification: { status: 'verified-by-status', checkedAt: '2025-01-01T00:00:00.000Z' },
+      },
+      {
+        title: 'Python Modules and Packages - Imports',
+        url: 'https://docs.python.org/3/tutorial/modules.html',
+        sourceType: 'preferred',
+        estimatedDuration: 20,
+        paid: false,
+        verification: { status: 'verified-by-content', checkedAt: '2025-01-01T00:00:00.000Z' },
+      },
+    ],
+    selfCheck: 'Can I structure a project as importable modules under a package?',
+    estimatedTime: 60,
+    highFrequencyUnits: ['module structure', 'packaging'],
+    encodingHook: 'A package is a directory with an __init__.py; a module is a file in it.',
+  }
+}
+
+describe('redoSession', () => {
+  it('replaces only the targeted session, leaves every other plan field equal after JSON parsing', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+    const originalJson = fs.read(join(planDir, 'plan.json'))
+
+    const replacement = replacementSession3()
+    const result = await redoSession(planDir, 3, replacement, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: laterClock,
+      fs,
+    })
+
+    const written = JSON.parse(fs.read(result.planPath)) as PlanData
+
+    // The directory was reused, not suffixed.
+    expect(result.planDir).toBe(planDir)
+    expectPathEndsWith(result.planDir, 'python-programming')
+    expect(result.htmlPath).toBe(join(planDir, 'index.html'))
+
+    // Session 3 carries the replacement's data, with verification timestamps
+    // refreshed by the verification step.
+    const newSession3 = written.sessions.find((s) => s.number === 3)!
+    expect(newSession3.title).toBe(replacement.title)
+    expect(newSession3.artifactOneLiner).toBe(replacement.artifactOneLiner)
+    expect(newSession3.selfCheck).toBe(replacement.selfCheck)
+    expect(newSession3.estimatedTime).toBe(replacement.estimatedTime)
+    expect(newSession3.highFrequencyUnits).toEqual(replacement.highFrequencyUnits)
+    expect(newSession3.encodingHook).toBe(replacement.encodingHook)
+    expect(newSession3.consolidation).toBe(replacement.consolidation)
+    expect(newSession3.materials).toHaveLength(replacement.materials.length)
+    for (const material of newSession3.materials) {
+      expect(material.verification.checkedAt).toBe(laterClock())
+    }
+
+    // Every other session's parsed data is exactly what we seeded: equal
+    // objects, unchanged verification timestamps.
+    const expectedSessions = clonePlan(plan).sessions.map((session) =>
+      session.number === 3 ? newSession3 : session
+    )
+    expect(written.sessions).toEqual(expectedSessions)
+
+    // Top-level plan fields are equal after JSON parsing. The whole point of
+    // single-session redo is that nothing else shifts.
+    const projection = (p: PlanData) => ({
+      meta: p.meta,
+      scopeNote: p.scopeNote,
+      disssPreamble: p.disssPreamble,
+      stakes: p.stakes,
+      phases: p.phases.map((phase) => ({
+        title: phase.title,
+        sessions: phase.sessions,
+        outlierStory: phase.outlierStory
+          ? { person: phase.outlierStory.person, approach: phase.outlierStory.approach, principle: phase.outlierStory.principle, citation: phase.outlierStory.citation }
+          : undefined,
+      })),
+    })
+    expect(projection(written)).toEqual(projection(plan))
+
+    // The on-disk plan.json was rewritten.
+    expect(fs.read(result.planPath)).not.toBe(originalJson)
+  })
+
+  it('fetches only the replacement session\'s material URLs and refreshes its verification records', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+
+    const seenUrls: string[] = []
+    const fetchImpl: FetchLike = async (url) => {
+      seenUrls.push(url)
+      return okResponse()
+    }
+    const replacement = replacementSession3()
+    const result = await redoSession(planDir, 3, replacement, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      now: laterClock,
+      fs,
+    })
+
+    expect(seenUrls.sort()).toEqual(replacement.materials.map((m) => m.url).sort())
+
+    const written = JSON.parse(fs.read(result.planPath)) as PlanData
+    const newSession3 = written.sessions.find((s) => s.number === 3)!
+    for (const material of newSession3.materials) {
+      expect(material.verification.checkedAt).toBe(laterClock())
+    }
+  })
+
+  it('keeps a replacement material whose URL fails with unresolved-after-retries and the rendered session warning', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+
+    const replacement = replacementSession3()
+    const deadUrl = replacement.materials[0].url
+    const deadTitle = replacement.materials[0].title
+
+    const fetchImpl: FetchLike = async (url) => (url === deadUrl ? notFoundResponse() : okResponse())
+    const searchReplacement: () => Promise<ReplacementCandidate | null> = async () => null
+
+    const result = await redoSession(planDir, 3, replacement, {
+      fetch: fetchImpl,
+      searchReplacement,
+      anchorUrls: [],
+      now: laterClock,
+      fs,
+    })
+
+    const written = JSON.parse(fs.read(result.planPath)) as PlanData
+    const slot = written.sessions.find((s) => s.number === 3)!.materials[0]
+    expect(slot.title).toBe(deadTitle)
+    expect(slot.url).toBe(deadUrl)
+    expect(slot.verification.status).toBe('unresolved-after-retries')
+    expect(slot.verification.checkedAt).toBeNull()
+
+    const html = fs.read(result.htmlPath)
+    const doc = new JSDOM(html).window.document
+    const session3 = doc.querySelector('.session[data-session="3"]')!
+    expect(session3.querySelector('.session-warning')).not.toBeNull()
+    expect(html).toContain(deadUrl)
+  })
+
+  it('does not fetch or re-timestamp the other thirteen sessions', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    // Stale verification timestamps so any unintended refresh is visible.
+    const staleTimestamp = '2025-01-01T00:00:00.000Z'
+    const staleRecord = { status: 'verified-by-status' as const, checkedAt: staleTimestamp }
+    for (const session of plan.sessions) {
+      for (const material of session.materials) material.verification = staleRecord
+    }
+    await seedPlanDir(planDir, plan, fs)
+
+    const seenUrls: string[] = []
+    const fetchImpl: FetchLike = async (url) => {
+      seenUrls.push(url)
+      return okResponse()
+    }
+    const replacement = replacementSession3()
+
+    await redoSession(planDir, 3, replacement, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      now: laterClock,
+      fs,
+    })
+
+    // Only the replacement's URLs were fetched.
+    expect(seenUrls.sort()).toEqual(replacement.materials.map((m) => m.url).sort())
+
+    const written = JSON.parse(fs.read(join(planDir, 'plan.json'))) as PlanData
+    // Every non-targeted session's verification record is exactly what was
+    // seeded — same timestamp, same status.
+    for (const session of written.sessions) {
+      if (session.number === 3) continue
+      for (const material of session.materials) {
+        expect(material.verification).toEqual(staleRecord)
+      }
+    }
+  })
+
+  it('rejects a replacement whose number does not match before any fetch or write', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+    const planBefore = fs.read(join(planDir, 'plan.json'))
+    const htmlBefore = fs.read(join(planDir, 'index.html'))
+    const filesBefore = new Set(fs.files.keys())
+
+    let fetchCalls = 0
+    const fetchImpl: FetchLike = async () => {
+      fetchCalls += 1
+      return okResponse()
+    }
+    const replacement = replacementSession3()
+    replacement.number = 4
+
+    await expect(
+      redoSession(planDir, 3, replacement, {
+        fetch: fetchImpl,
+        searchReplacement: noReplacement,
+        now: fixedClock,
+        fs,
+      })
+    ).rejects.toThrow(/number/i)
+
+    expect(fetchCalls).toBe(0)
+    expect(fs.read(join(planDir, 'plan.json'))).toBe(planBefore)
+    expect(fs.read(join(planDir, 'index.html'))).toBe(htmlBefore)
+    expect(new Set(fs.files.keys())).toEqual(filesBefore)
+  })
+
+  it('rejects a replacement that makes the plan invalid before any write, leaving both files untouched', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+    const planBefore = fs.read(join(planDir, 'plan.json'))
+    const htmlBefore = fs.read(join(planDir, 'index.html'))
+    const filesBefore = new Set(fs.files.keys())
+
+    let fetchCalls = 0
+    const fetchImpl: FetchLike = async () => {
+      fetchCalls += 1
+      return okResponse()
+    }
+
+    const replacement = replacementSession3()
+    // Knock the replacement's estimatedTime above the hoursPerDay budget so
+    // validation rejects it once it's spliced into the merged plan.
+    replacement.estimatedTime = plan.meta.hoursPerDay * 60 + 30
+
+    await expect(
+      redoSession(planDir, 3, replacement, {
+        fetch: fetchImpl,
+        searchReplacement: noReplacement,
+        now: fixedClock,
+        fs,
+      })
+    ).rejects.toBeInstanceOf(ValidationFailedError)
+
+    expect(fetchCalls).toBe(0)
+    expect(fs.read(join(planDir, 'plan.json'))).toBe(planBefore)
+    expect(fs.read(join(planDir, 'index.html'))).toBe(htmlBefore)
+    expect(new Set(fs.files.keys())).toEqual(filesBefore)
+  })
+
+  it('writes a page whose session 3 carries the replacement artifact, self-check, and materials, with no stale target-session content', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+    const replacement = replacementSession3()
+    const oldTitle = plan.sessions.find((s) => s.number === 3)!.title
+    const oldArtifact = plan.sessions.find((s) => s.number === 3)!.artifactOneLiner
+    const oldSelfCheck = plan.sessions.find((s) => s.number === 3)!.selfCheck
+    const oldMaterialTitle = plan.sessions.find((s) => s.number === 3)!.materials[0].title
+
+    const result = await redoSession(planDir, 3, replacement, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: laterClock,
+      fs,
+    })
+
+    const html = fs.read(result.htmlPath)
+    const doc = new JSDOM(html).window.document
+    const session3 = doc.querySelector('.session[data-session="3"]')!
+    expect(session3.querySelector('.session-title')?.textContent).toBe(replacement.title)
+    expect(session3.querySelector('.session-artifact')?.textContent?.trim()).toBe(
+      replacement.artifactOneLiner
+    )
+    expect(session3.querySelector('.self-check')?.textContent ?? '').toContain(replacement.selfCheck)
+    for (const material of replacement.materials) {
+      expect(session3.textContent ?? '').toContain(material.title)
+      expect(html).toContain(material.url)
+    }
+    // The old session 3 fields are gone from the page.
+    expect(session3.querySelector('.session-title')?.textContent).not.toBe(oldTitle)
+    expect(session3.querySelector('.session-artifact')?.textContent?.trim()).not.toBe(oldArtifact)
+    expect(session3.querySelector('.self-check')?.textContent ?? '').not.toContain(oldSelfCheck)
+    // The old session 3's unique material title is gone — the material was
+    // replaced, not silently merged.
+    expect(session3.textContent ?? '').not.toContain(oldMaterialTitle)
+    // Other sessions survive the redo. Session 1's title is a stable, distinctive
+    // string and would only be absent if the page were partially re-rendered.
+    const session1 = doc.querySelector('.session[data-session="1"]')!
+    expect(session1.querySelector('.session-title')?.textContent).toBe('Python Syntax Basics')
+  })
+
+  it('preserves session-number progress keying: a re-rendered page restores checkbox and notes state for the same session number', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+    const replacement = replacementSession3()
+
+    const result = await redoSession(planDir, 3, replacement, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: laterClock,
+      fs,
+    })
+
+    // Load the post-redo HTML into a fresh DOM whose localStorage already
+    // carries state keyed by session number 3 (the same number the
+    // replacement preserved). The page's restoration script reads from
+    // studyPlanProgress and applies it to elements whose data-session="3".
+    const restoredDoc = new JSDOM(fs.read(result.htmlPath), {
+      runScripts: 'dangerously',
+      url: 'http://localhost/',
+      beforeParse(window) {
+        window.localStorage.setItem(
+          'studyPlanProgress',
+          JSON.stringify({ checkboxes: { '3': true }, notes: { '3': 'looked good' } })
+        )
+      },
+    }).window.document
+
+    const restoredCheck = restoredDoc.querySelector('.session-check[data-session="3"]') as HTMLInputElement
+    const restoredNotes = restoredDoc.querySelector('.notes-area[data-session="3"]') as HTMLTextAreaElement
+    expect(restoredCheck.checked).toBe(true)
+    expect(restoredNotes.value).toBe('looked good')
+    // Other sessions keep their unchecked default — the stored state did not
+    // bleed onto them.
+    const session4Check = restoredDoc.querySelector('.session-check[data-session="4"]') as HTMLInputElement
+    expect(session4Check.checked).toBe(false)
+  })
+})
+
 interface CliResult {
   status: number | null
   stdout: string
@@ -421,6 +775,30 @@ function runVerifyCli(args: string[], cwd: string): Promise<CliResult> {
     const child = spawn(
       process.execPath,
       ['--experimental-strip-types', 'scripts/verify.ts', ...args],
+      { cwd, env: process.env, windowsHide: true }
+    )
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    child.on('close', (status) => resolve({ status, stdout, stderr }))
+    child.on('error', reject)
+  })
+}
+
+/**
+ * Run the redo CLI as a real subprocess. The replacement JSON file is
+ * written into `cwd` and removed afterwards so each test starts clean.
+ */
+function runRedoCli(args: string[], cwd: string): Promise<CliResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ['--experimental-strip-types', 'scripts/redo.ts', ...args],
       { cwd, env: process.env, windowsHide: true }
     )
     let stdout = ''
@@ -497,5 +875,183 @@ describe('verify CLI', () => {
     const payload = JSON.parse(result.stdout) as { ok: boolean; error?: string }
     expect(payload.ok).toBe(false)
     expect(payload.error ?? '').toContain('plan.json')
+  })
+})
+
+describe('redo CLI', () => {
+  let baseDir: string
+
+  beforeEach(async () => {
+    baseDir = await mkdtemp(join(tmpdir(), 'study-plan-redo-cli-'))
+  })
+
+  afterEach(async () => {
+    await rm(baseDir, { recursive: true, force: true })
+  })
+
+  async function writeReplacementFile(planDir: string): Promise<string> {
+    const replacement = replacementSession3()
+    const path = join(planDir, 'replacement.json')
+    await writeFile(path, JSON.stringify(replacement, null, 2), 'utf8')
+    return path
+  }
+
+  it('rewrites both files in place and prints a JSON summary pointing at the existing directory', async () => {
+    const generated = await generatePlan(fixturePlan, baseDir, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+    const planDir = generated.planDir
+    const planBefore = await readFile(generated.planPath, 'utf8')
+    const htmlBefore = await readFile(generated.htmlPath, 'utf8')
+    const replacementPath = await writeReplacementFile(baseDir)
+
+    const result = await runRedoCli([planDir, '3', replacementPath], process.cwd())
+
+    expect(result.status).toBe(0)
+    const summary = JSON.parse(result.stdout) as {
+      ok: boolean
+      planDir: string
+      planPath: string
+      htmlPath: string
+      unresolved: Array<{ status: string }>
+    }
+    expect(summary.ok).toBe(true)
+    expect(summary.planDir).toBe(planDir)
+    expect(summary.planPath).toBe(generated.planPath)
+    expect(summary.htmlPath).toBe(generated.htmlPath)
+    // The CLI ran against the real web, so unresolved may be non-empty for
+    // off-list URLs; the shape and target are what matter.
+    expect(Array.isArray(summary.unresolved)).toBe(true)
+    expect(summary.unresolved.every((entry) => typeof entry.status === 'string')).toBe(true)
+    // The directory was updated in place — no neighbouring -2 directory.
+    const siblings = await readdir(baseDir)
+    expect(siblings.filter((name) => name.startsWith('python-programming'))).toEqual(['python-programming'])
+    // The plan data and the rendered page actually changed.
+    const planAfter = await readFile(generated.planPath, 'utf8')
+    const htmlAfter = await readFile(generated.htmlPath, 'utf8')
+    expect(planAfter).not.toBe(planBefore)
+    expect(htmlAfter).not.toBe(htmlBefore)
+    // The redo's replacement title is in the rewritten page; the old one is gone.
+    expect(htmlAfter).toContain('Functions and Modules — revised')
+    expect(htmlAfter).not.toContain('Functions and Modules<')
+  }, 30000)
+
+  it('exits non-zero with a usage message when the argument count is wrong', async () => {
+    const generated = await generatePlan(fixturePlan, baseDir, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+
+    // No args at all.
+    const noArgs = await runRedoCli([], process.cwd())
+    expect(noArgs.status).toBe(2)
+    expect(noArgs.stderr + noArgs.stdout).toContain('Usage:')
+    expect(noArgs.stderr + noArgs.stdout).toContain('<replacement.json>')
+
+    // Only the plan directory.
+    const onlyDir = await runRedoCli([generated.planDir], process.cwd())
+    expect(onlyDir.status).toBe(2)
+    expect(onlyDir.stderr + onlyDir.stdout).toContain('Usage:')
+
+    // Plan dir and session number but no replacement path.
+    const onlyThree = await runRedoCli([generated.planDir, '3'], process.cwd())
+    expect(onlyThree.status).toBe(2)
+    expect(onlyThree.stderr + onlyThree.stdout).toContain('Usage:')
+  })
+
+  it('exits non-zero with a JSON error when the supplied directory has no plan.json', async () => {
+    const emptyDir = join(baseDir, 'empty')
+    await mkdir(emptyDir, { recursive: true })
+    const replacementPath = await writeReplacementFile(baseDir)
+
+    const result = await runRedoCli([emptyDir, '3', replacementPath], process.cwd())
+
+    expect(result.status).toBe(1)
+    const payload = JSON.parse(result.stdout) as { ok: boolean; error?: string }
+    expect(payload.ok).toBe(false)
+    expect(payload.error ?? '').toContain('plan.json')
+  })
+
+  it('exits non-zero with a JSON error when the replacement file looks like HTML', async () => {
+    const generated = await generatePlan(fixturePlan, baseDir, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+    const htmlPath = join(baseDir, 'replacement.html')
+    await writeFile(htmlPath, '<!DOCTYPE html><html><body>not a session</body></html>', 'utf8')
+
+    const result = await runRedoCli([generated.planDir, '3', htmlPath], process.cwd())
+
+    expect(result.status).toBe(1)
+    const payload = JSON.parse(result.stdout) as { ok: boolean; error?: string }
+    expect(payload.ok).toBe(false)
+    expect(payload.error ?? '').toMatch(/HTML/i)
+  })
+
+  it('exits non-zero with a JSON error when the replacement session number does not match the requested one', async () => {
+    const generated = await generatePlan(fixturePlan, baseDir, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+    const replacement = replacementSession3()
+    replacement.number = 4
+    const replacementPath = join(baseDir, 'replacement.json')
+    await writeFile(replacementPath, JSON.stringify(replacement, null, 2), 'utf8')
+
+    const planBefore = await readFile(generated.planPath, 'utf8')
+    const htmlBefore = await readFile(generated.htmlPath, 'utf8')
+
+    const result = await runRedoCli([generated.planDir, '3', replacementPath], process.cwd())
+
+    expect(result.status).toBe(1)
+    const payload = JSON.parse(result.stdout) as { ok: boolean; error?: string }
+    expect(payload.ok).toBe(false)
+    expect(payload.error ?? '').toMatch(/number/i)
+    // No write happened: both files on disk are untouched.
+    const planAfter = await readFile(generated.planPath, 'utf8')
+    const htmlAfter = await readFile(generated.htmlPath, 'utf8')
+    expect(planAfter).toBe(planBefore)
+    expect(htmlAfter).toBe(htmlBefore)
+  })
+
+  it('exits non-zero with a JSON error when the sessionNumber argument is not an integer 1-14', async () => {
+    const generated = await generatePlan(fixturePlan, baseDir, {
+      fetch: baseFetch,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+    const replacementPath = await writeReplacementFile(baseDir)
+
+    const notANumber = await runRedoCli([generated.planDir, 'three', replacementPath], process.cwd())
+    expect(notANumber.status).toBe(1)
+    const notANumberPayload = JSON.parse(notANumber.stdout) as { ok: boolean; error?: string }
+    expect(notANumberPayload.ok).toBe(false)
+    expect(notANumberPayload.error ?? '').toMatch(/sessionNumber/i)
+
+    const outOfRange = await runRedoCli([generated.planDir, '0', replacementPath], process.cwd())
+    expect(outOfRange.status).toBe(1)
+
+    const wayOutOfRange = await runRedoCli([generated.planDir, '15', replacementPath], process.cwd())
+    expect(wayOutOfRange.status).toBe(1)
+  })
+
+  it('exits non-zero with a JSON error when plan.json is malformed JSON, instead of a raw stack trace', async () => {
+    const planDir = join(baseDir, 'broken')
+    await mkdir(planDir, { recursive: true })
+    await writeFile(join(planDir, 'plan.json'), '{ not valid json', 'utf8')
+    const replacementPath = await writeReplacementFile(baseDir)
+
+    const result = await runRedoCli([planDir, '3', replacementPath], process.cwd())
+
+    expect(result.status).toBe(1)
+    const payload = JSON.parse(result.stdout) as { ok: boolean; error?: string }
+    expect(payload.ok).toBe(false)
+    expect(payload.error ?? '').toMatch(/plan\.json/)
+    expect(payload.error ?? '').toMatch(/JSON/i)
   })
 })
