@@ -1,4 +1,4 @@
-import type { Material, PlanData, Session } from './plan-types.ts'
+import type { Material, Phase, PlanData, Session } from './plan-types.ts'
 
 function esc(value: string): string {
   return value
@@ -9,76 +9,427 @@ function esc(value: string): string {
     .replace(/'/g, '&#39;')
 }
 
+// Quiet document: one accent, paper-and-ink palette, type sized for two weeks
+// of reading. `:root` is the light palette and the system default; the dark
+// media query overrides it; `html[data-theme=…]` is the viewer's explicit
+// choice and wins over both by specificity.
 const STYLE = `
-:root { --bg:#fafafa; --surface:#ffffff; --fg:#14161a; --muted:#5b6572; --accent:#2f6f4f; --line:#e2e6ea; --band:#eef2f5; --warn-bg:#fff7e6; }
+:root {
+  color-scheme: light;
+  --paper: #f4f0e7;
+  --paper-deep: #ebe4d7;
+  --paper-panel: #fbf9f4;
+  --paper-line: #d6cfc1;
+  --paper-line-strong: #bdb3a3;
+  --ink: #26332d;
+  --ink-soft: #56615a;
+  --ink-faint: #737a72;
+  --accent: #b45d4d;
+  --accent-strong: #873f35;
+  --accent-wash: #f1ded6;
+  --sage-wash: #dfe6dc;
+  --warn-wash: #f3e5d7;
+  --paid: #986b25;
+  --font-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #1f2823;
+    --paper-deep: #27322c;
+    --paper-panel: #26312b;
+    --paper-line: #435047;
+    --paper-line-strong: #627166;
+    --ink: #f0ece2;
+    --ink-soft: #b7c0b7;
+    --ink-faint: #97a299;
+    --accent: #d27a68;
+    --accent-strong: #f0a091;
+    --accent-wash: #49332e;
+    --sage-wash: #334239;
+    --warn-wash: #49372b;
+    --paid: #e6bc6a;
+  }
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --paper: #f4f0e7;
+  --paper-deep: #ebe4d7;
+  --paper-panel: #fbf9f4;
+  --paper-line: #d6cfc1;
+  --paper-line-strong: #bdb3a3;
+  --ink: #26332d;
+  --ink-soft: #56615a;
+  --ink-faint: #737a72;
+  --accent: #b45d4d;
+  --accent-strong: #873f35;
+  --accent-wash: #f1ded6;
+  --sage-wash: #dfe6dc;
+  --warn-wash: #f3e5d7;
+  --paid: #986b25;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #1f2823;
+  --paper-deep: #27322c;
+  --paper-panel: #26312b;
+  --paper-line: #435047;
+  --paper-line-strong: #627166;
+  --ink: #f0ece2;
+  --ink-soft: #b7c0b7;
+  --ink-faint: #97a299;
+  --accent: #d27a68;
+  --accent-strong: #f0a091;
+  --accent-wash: #49332e;
+  --sage-wash: #334239;
+  --warn-wash: #49372b;
+  --paid: #e6bc6a;
+}
+
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-html { overflow-x: hidden; }
-body { font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); }
-.page { max-width: 46rem; margin: 0 auto; padding: 2rem 1.25rem 6rem; }
-h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
-.meta { color: var(--muted); margin: 0 0 1.5rem; }
-.scope-note { background: var(--warn-bg); border-left: 4px solid var(--accent); padding: .75rem 1rem; margin: 0 0 1.5rem; border-radius: 0 6px 6px 0; overflow-wrap: break-word; }
-.stakes-field { display: flex; gap: .5rem; align-items: baseline; margin: 0 0 1.75rem; }
-.stakes-field label { font-weight: 600; }
-.stakes-field input { flex: 1; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: var(--surface); color: inherit; }
-.preamble { margin: 0 0 2rem; }
-.preamble h2 { font-size: 1.15rem; margin: 0 0 .5rem; }
-.preamble dl { margin: 0; }
-.preamble dt { font-weight: 600; margin-top: .6rem; }
-.preamble dd { margin: 0; color: var(--fg); overflow-wrap: break-word; }
-.phase-band { display: flex; align-items: center; gap: .6rem; margin: 2rem 0 .75rem; padding: .35rem .7rem; background: var(--band); border-radius: 6px; }
-.phase-title { font-weight: 700; }
-.session { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 .5rem; background: var(--surface); }
-.session-summary { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; padding: .7rem .9rem; cursor: pointer; }
+html, body { min-width: 0; margin: 0; padding: 0; }
+html { overflow-x: hidden; background: var(--paper); color: var(--ink); }
+body {
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.6 var(--font-body);
+}
+button, input, textarea { font: inherit; }
+button { color: inherit; }
+a { color: var(--accent-strong); }
+
+.ledger-app {
+  min-height: 100vh;
+  padding-bottom: 72px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.masthead, .page {
+  width: min(1040px, calc(100% - 64px));
+  margin: 0 auto;
+}
+.page { overflow-wrap: break-word; }
+.scope-note, .stakes-field, .aside-stat, .hero-target, .reason, .phase-band, .session-summary, .session-detail, .material, .self-check { overflow-x: auto; }
+
+.masthead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 28px 0 18px;
+  border-bottom: 1px solid var(--paper-line-strong);
+}
+.eyebrow {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.mode-button, .footer-action {
+  border: 1px solid var(--paper-line-strong);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.mode-button { min-width: 120px; padding: 8px 12px; }
+.mode-button:hover, .footer-action:hover { border-color: var(--accent); color: var(--accent-strong); }
+.mode-button:focus-visible, .footer-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, .7fr);
+  gap: 64px;
+  padding: 52px 0 32px;
+}
+h1, h2 { font-family: var(--font-display); font-weight: 400; }
+h1 {
+  max-width: 720px;
+  margin: 0 0 14px;
+  font-size: clamp(40px, 5.5vw, 64px);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+}
+.hero-target { max-width: 640px; margin: 0; color: var(--ink-soft); font-size: 19px; line-height: 1.55; }
+.hero-target strong { color: var(--ink); font-weight: 650; }
+.hero-aside { padding-top: 8px; }
+.aside-rule { width: 100%; margin-bottom: 14px; border-top: 1px solid var(--paper-line-strong); }
+.aside-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--paper-line);
+}
+.aside-label, .detail-label, .reason-label, .stakes-label, .phase-meta {
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.aside-value { color: var(--ink); font-size: 15px; font-weight: 650; text-align: right; overflow-wrap: anywhere; }
+
+.scope-note {
+  max-width: 640px;
+  margin: 24px 0 0;
+  padding: 20px 24px 20px 26px;
+  border: 1px solid var(--paper-line);
+  border-left: 4px solid var(--accent);
+  background: var(--accent-wash);
+}
+.scope-note p { margin: 0; color: var(--ink); font-size: 16px; overflow-wrap: anywhere; }
+.scope-note strong { color: var(--accent-strong); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+
+.stakes-field {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 56px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--paper-line-strong);
+  border-bottom: 1px solid var(--paper-line-strong);
+  background: var(--paper-deep);
+}
+.stakes-label { color: var(--accent-strong); }
+.stakes-input {
+  width: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--paper-line-strong);
+  outline: none;
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.stakes-input:focus { border-color: var(--accent); }
+
+.section-heading { margin: 0 0 20px; }
+.section-heading h2 { margin: 0; font-size: 30px; letter-spacing: -.03em; }
+.preamble { margin-bottom: 56px; }
+.preamble-grid { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--paper-line-strong); }
+.reason {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 16px;
+  padding: 18px 18px 18px 0;
+  border-bottom: 1px solid var(--paper-line);
+}
+.reason:nth-child(odd) { padding-right: 24px; border-right: 1px solid var(--paper-line); }
+.reason:nth-child(even) { padding-left: 24px; }
+.reason-label { color: var(--accent-strong); }
+.reason-text { margin: 0; color: var(--ink-soft); font-size: 16px; line-height: 1.6; overflow-wrap: anywhere; }
+
+.plan-heading { margin-top: 64px; margin-bottom: 24px; }
+.phase-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin: 28px 0 14px;
+  padding: 12px 14px 12px 0;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--paper-line-strong);
+}
+.phase-band:first-of-type { margin-top: 0; }
+.phase-title-wrap { display: flex; align-items: center; gap: 14px; }
+.phase-no { color: var(--accent-strong); font: 22px var(--font-display); }
+.phase-title { color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.phase-meta { text-align: right; }
+
+.session {
+  margin: 0 0 8px 44px;
+  border: 1px solid var(--paper-line);
+  background: var(--paper-panel);
+}
+.session-summary {
+  display: grid;
+  grid-template-columns: 26px 40px minmax(180px, 1.1fr) minmax(230px, 1.55fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 16px 12px 14px;
+  cursor: pointer;
+}
+.session-summary:hover { background: var(--paper-deep); }
 .session-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.session-check { align-self: center; width: 1.05rem; height: 1.05rem; margin: 0; }
-.session-number { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
-.session-title { font-weight: 600; }
-.session-artifact { color: var(--muted); flex: 1 1 100%; overflow-wrap: break-word; }
-.session-detail { padding: .25rem .9rem .9rem; border-top: 1px solid var(--line); overflow-x: auto; }
+.session-check { width: 17px; height: 17px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.session-number { color: var(--accent-strong); font: 20px var(--font-display); }
+.session-title { color: var(--ink); font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.session-artifact { color: var(--ink-soft); font-size: 15px; overflow-wrap: anywhere; }
+.session-artifact::before { content: "→ "; color: var(--accent); }
+.session-tags { display: flex; justify-content: flex-end; align-items: center; gap: 7px; flex-wrap: wrap; }
+.tag {
+  padding: 3px 7px;
+  border: 1px solid var(--paper-line-strong);
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tag.consolidation { border-color: var(--ink-soft); color: var(--ink-soft); }
+.tag.warning { border-color: var(--accent); background: var(--warn-wash); color: var(--accent-strong); }
+.session-warning { flex: 0 0 auto; }
+.session-detail { padding: 0 24px 24px 78px; border-top: 1px solid var(--paper-line); }
 .session-detail[hidden] { display: none; }
-.materials { list-style: none; margin: .6rem 0; padding: 0; }
-.material { display: grid; grid-template-columns: 1fr auto auto; gap: .25rem .75rem; align-items: baseline; padding: .35rem 0; border-bottom: 1px dashed var(--line); overflow-wrap: break-word; }
-.material-link { color: var(--accent); text-decoration: none; }
-.material-link:hover { text-decoration: underline; }
-.material-duration { color: var(--muted); white-space: nowrap; }
-.material-paid { color: #a15c00; white-space: nowrap; }
-.session-warning { color: #a15c00; font-weight: 600; flex: 1 1 100%; }
-.session-consolidation { display: inline-block; padding: .1rem .5rem; background: var(--band); color: var(--accent); border: 1px solid var(--line); border-radius: 999px; font-size: .8rem; font-weight: 600; }
-.self-check { margin: .6rem 0; padding: .5rem .7rem; background: var(--band); border-radius: 6px; overflow-wrap: break-word; }
-.self-check-label { font-weight: 600; }
-.session-units, .session-hook { margin: .5rem 0; font-size: .9rem; color: var(--muted); overflow-wrap: break-word; }
-.session-units-label, .session-hook-label { font-weight: 600; color: var(--ink); }
-.notes-label { display: block; font-weight: 600; margin-top: .6rem; }
-.notes-area { width: 100%; min-height: 5rem; margin-top: .3rem; padding: .5rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: var(--surface); color: inherit; }
-.progress-indicator { position: fixed; bottom: 0; left: 0; right: 0; background: var(--band); padding: .5rem; text-align: center; border-top: 1px solid var(--line); font-size: .9rem; }
-.progress-controls { position: fixed; top: 0; right: 0; padding: .5rem; background: var(--band); border-bottom: 1px solid var(--line); z-index: 1000; }
-.progress-export-btn { margin-right: .5rem; padding: .25rem .5rem; cursor: pointer; }
-.progress-import-label { cursor: pointer; margin-left: .5rem; }
-.progress-import-label input { cursor: pointer; }
+.detail-block { padding-top: 16px; }
+.detail-label { display: block; margin-bottom: 8px; color: var(--accent-strong); }
+.materials { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.material {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--paper-line);
+  background: var(--paper);
+  overflow-wrap: anywhere;
+}
+.material-title { color: var(--ink); font-size: 15px; font-weight: 650; }
+.material a { color: var(--accent-strong); text-decoration: underline; text-decoration-color: var(--paper-line-strong); text-underline-offset: 3px; }
+.material a:hover, .material a:focus-visible { text-decoration-color: currentColor; }
+.material-paid { grid-column: 1 / -1; color: var(--paid); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.duration { color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
+.session-units, .session-hook { margin: 16px 0 0; color: var(--ink-soft); font-size: 15px; overflow-wrap: anywhere; }
+.session-units-label, .session-hook-label { color: var(--ink); font-weight: 650; }
+.self-check {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border-left: 2px solid var(--ink);
+  background: var(--sage-wash);
+  color: var(--ink);
+  font: 17px/1.55 var(--font-display);
+  overflow-wrap: anywhere;
+}
+.self-check-label { display: block; margin-bottom: 4px; color: var(--accent-strong); font: 700 12px var(--font-body); letter-spacing: .14em; text-transform: uppercase; }
+.notes-label { display: block; margin-top: 20px; color: var(--ink); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.notes-area {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  margin-top: 8px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--paper-line-strong);
+  outline: none;
+  background: var(--paper);
+  color: var(--ink);
+}
+.notes-area:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-wash); }
+
+.progress-spine {
+  position: fixed;
+  z-index: 40;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 7px 24px;
+  overflow-x: auto;
+  border-top: 1px solid var(--paper-line-strong);
+  background: var(--paper);
+}
+.spine-inner { width: min(1040px, 100%); margin: 0 auto; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; }
+.progress-indicator { color: var(--ink); font-size: 13px; font-weight: 650; letter-spacing: .03em; white-space: nowrap; }
+.progress-track { height: 2px; background: var(--paper-line); }
+.progress-fill { width: 0; height: 100%; background: var(--accent); transition: width .25s ease; }
+.footer-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.footer-action { padding: 5px 9px; }
+.progress-import-label { display: inline-flex; align-items: center; }
+.progress-import-label input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
+
+@media (max-width: 900px) {
+  .masthead, .page { width: min(calc(100% - 48px), 760px); }
+  .hero { gap: 32px; }
+  .session-summary { grid-template-columns: 26px 32px minmax(160px, 1fr) auto; }
+  .session-artifact { grid-column: 3 / -1; }
+}
+
+@media (max-width: 640px) {
+  body { font-size: 16px; }
+  .ledger-app { padding-bottom: 92px; }
+  .masthead, .page { width: calc(100% - 32px); }
+  .masthead { padding-top: 18px; }
+  .mode-button { min-width: 104px; padding: 7px 8px; }
+  .hero { display: block; padding-top: 36px; }
+  h1 { max-width: 460px; font-size: clamp(36px, 11vw, 52px); }
+  .hero-target { font-size: 17px; }
+  .hero-aside { margin-top: 28px; }
+  .stakes-field { grid-template-columns: 1fr; gap: 4px; }
+  .preamble-grid { display: block; }
+  .reason, .reason:nth-child(odd), .reason:nth-child(even) { grid-template-columns: 1fr; gap: 4px; padding: 14px 0; border-right: 0; }
+  .section-heading h2 { font-size: 26px; }
+  .phase-band { align-items: flex-start; }
+  .phase-meta { max-width: 120px; }
+  .session { margin-left: 0; }
+  .session-summary { grid-template-columns: 22px 30px 1fr auto; gap: 8px; padding: 12px 10px; }
+  .session-title { font-size: 15px; }
+  .session-artifact { grid-column: 3 / -1; font-size: 14px; }
+  .session-tags { grid-column: 4; grid-row: 1; }
+  .session-detail { padding: 0 14px 18px 44px; }
+  .materials { display: block; }
+  .material + .material { margin-top: 8px; }
+  .progress-spine { padding: 6px 16px; }
+  .spine-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .progress-indicator { flex: 0 0 auto; }
+  .progress-track { flex: 1 1 48px; }
+  .footer-actions { flex: 1 0 100%; justify-content: flex-start; gap: 4px; }
+  .footer-action { padding: 4px 8px; letter-spacing: .06em; }
+}
 `.trim()
+
+// Runs in <head>, before first paint, so a stored explicit theme never flashes
+// the system palette first. The theme lives under its own key: it is a viewer
+// preference, not progress, so export/import of `studyPlanProgress` ignores it.
+const THEME_BOOT = `
+(function () {
+  try {
+    var theme = window.localStorage.getItem('studyPlanTheme');
+    if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+  } catch (e) {}
+})();
+`.trim()
+
+const THEME_NAMES = { system: 'System theme', light: 'Light mode', dark: 'Dark mode' } as const
 
 const SCRIPT = `
 (function () {
+  var storageKey = 'studyPlanProgress';
+  var themeKey = 'studyPlanTheme';
+  var summaries = Array.prototype.slice.call(document.querySelectorAll('.session-summary'));
+  var checks = Array.prototype.slice.call(document.querySelectorAll('.session-check'));
+  var root = document.documentElement;
+
   // -- Storage (issue 02) ---------------------------------------------------
 
   function getStorage() {
     try {
-      const storage = localStorage.getItem('studyPlanProgress');
-      return storage ? JSON.parse(storage) : {};
+      var raw = window.localStorage.getItem(storageKey);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
     } catch (e) {
-      console.warn('localStorage failed:', e);
       return {};
     }
   }
 
   function saveStorage(data) {
-    try {
-      localStorage.setItem('studyPlanProgress', JSON.stringify(data));
-    } catch (e) {
-      console.warn('Failed to save to localStorage:', e);
-    }
+    try { window.localStorage.setItem(storageKey, JSON.stringify(data)); } catch (e) {}
   }
 
   function withState(mutate) {
@@ -87,51 +438,8 @@ const SCRIPT = `
     saveStorage(state);
   }
 
-  function sessionNumberOf(el) {
-    return parseInt(el.getAttribute('data-session'), 10);
-  }
-
-  function getCheckboxState(sessionNumber) {
-    const state = getStorage();
-    return state.checkboxes && state.checkboxes[sessionNumber] === true;
-  }
-
-  function setCheckboxState(sessionNumber, checked) {
-    withState(function (state) {
-      if (!state.checkboxes) state.checkboxes = {};
-      state.checkboxes[sessionNumber] = checked;
-    });
-  }
-
-  function getNote(sessionNumber) {
-    const state = getStorage();
-    return state.notes && state.notes[sessionNumber] || '';
-  }
-
-  function setNote(sessionNumber, text) {
-    withState(function (state) {
-      if (!state.notes) state.notes = {};
-      if (text) {
-        state.notes[sessionNumber] = text;
-      } else {
-        delete state.notes[sessionNumber];
-      }
-    });
-  }
-
-  function getStakes() {
-    const state = getStorage();
-    return state.stakes || '';
-  }
-
-  function setStakes(text) {
-    withState(function (state) {
-      if (text) {
-        state.stakes = text;
-      } else {
-        delete state.stakes;
-      }
-    });
+  function sessionNumberOf(element) {
+    return parseInt(element.getAttribute('data-session'), 10);
   }
 
   // -- Accordion -------------------------------------------------------------
@@ -145,181 +453,148 @@ const SCRIPT = `
 
   function toggle(summary) { setOpen(summary, summary.getAttribute('aria-expanded') !== 'true'); }
 
-  function initAccordion(summaries) {
-    for (var i = 0; i < summaries.length; i++) {
-      (function (summary) {
-        summary.addEventListener('click', function (event) {
-          if (event.target && event.target.tagName === 'INPUT') return;
-          toggle(summary);
-        });
+  summaries.forEach(function (summary) {
+    summary.addEventListener('click', function (event) {
+      if (event.target && event.target.tagName === 'INPUT') return;
+      toggle(summary);
+    });
+    summary.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        toggle(summary);
+      }
+    });
+  });
 
-        summary.addEventListener('keydown', function (event) {
-          if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
-            event.preventDefault();
-            toggle(summary);
-          }
-        });
-      })(summaries[i]);
-    }
+  // -- Current session (issue 02: lowest unchecked expands on load) ----------
+
+  function lowestUnchecked() {
+    var lowest = null;
+    checks.forEach(function (check) {
+      if (check.checked) return;
+      var number = sessionNumberOf(check);
+      if (lowest === null || number < lowest) lowest = number;
+    });
+    return lowest;
+  }
+
+  function expandLowestUnchecked() {
+    var number = lowestUnchecked();
+    if (number === null) return;
+    var summary = document.querySelector('.session[data-session="' + number + '"] .session-summary');
+    if (summary) setOpen(summary, true);
+  }
+
+  // -- Progress spine ----------------------------------------------------------
+
+  function updateProgressIndicator() {
+    var complete = checks.filter(function (check) { return check.checked; }).length;
+    var percent = checks.length ? (complete / checks.length) * 100 : 0;
+    var indicator = document.querySelector('.progress-indicator');
+    if (indicator) indicator.textContent = complete + ' of ' + checks.length + ' sessions complete';
+    var fill = document.getElementById('progress-fill');
+    if (fill) fill.style.width = percent + '%';
   }
 
   // -- Checkbox, notes and stakes persistence --------------------------------
 
-  function initCheckboxes(summaries) {
-    for (var i = 0; i < summaries.length; i++) {
-      (function (summary) {
-        var checkbox = summary.querySelector('input[type="checkbox"]');
-        if (!checkbox) return;
-        checkbox.checked = getCheckboxState(sessionNumberOf(checkbox));
-        checkbox.addEventListener('change', function () {
-          setCheckboxState(sessionNumberOf(checkbox), checkbox.checked);
-          updateProgressIndicator(summaries);
-        });
-      })(summaries[i]);
-    }
-  }
-
-  function initNotes() {
-    var textareas = document.querySelectorAll('.notes-area');
-    for (var i = 0; i < textareas.length; i++) {
-      (function (textarea) {
-        textarea.value = getNote(sessionNumberOf(textarea));
-        textarea.addEventListener('input', function () {
-          setNote(sessionNumberOf(textarea), textarea.value);
-        });
-      })(textareas[i]);
-    }
-  }
-
-  function initStakes() {
-    var stakesInput = document.getElementById('stakes');
-    if (!stakesInput) return;
-    stakesInput.value = getStakes();
-    stakesInput.addEventListener('input', function () {
-      setStakes(stakesInput.value);
+  var state = getStorage();
+  checks.forEach(function (check) {
+    var number = check.getAttribute('data-session');
+    check.checked = Boolean(state.checkboxes && state.checkboxes[number] === true);
+    check.addEventListener('change', function () {
+      withState(function (next) {
+        next.checkboxes = next.checkboxes || {};
+        next.checkboxes[number] = check.checked;
+      });
+      updateProgressIndicator();
     });
-  }
+  });
 
-  // -- Auto-expand the lowest unchecked session (issue 02) -------------------
+  document.querySelectorAll('.notes-area').forEach(function (area) {
+    var number = area.getAttribute('data-session');
+    if (state.notes && state.notes[number]) area.value = state.notes[number];
+    area.addEventListener('input', function () {
+      withState(function (next) {
+        next.notes = next.notes || {};
+        if (area.value) next.notes[number] = area.value; else delete next.notes[number];
+      });
+    });
+  });
 
-  function expandLowestUnchecked(summaries) {
-    var uncheckedSessions = [];
-    for (var i = 0; i < summaries.length; i++) {
-      var checkbox = summaries[i].querySelector('input[type="checkbox"]');
-      if (checkbox && !checkbox.checked) {
-        uncheckedSessions.push(sessionNumberOf(checkbox));
-      }
-    }
-
-    if (uncheckedSessions.length > 0) {
-      var lowestUnchecked = uncheckedSessions.sort(function (a, b) { return a - b; })[0];
-      var targetSummary = document.querySelector('.session[data-session="' + lowestUnchecked + '"] .session-summary');
-      if (targetSummary) {
-        setOpen(targetSummary, true);
-      }
-    }
-  }
-
-  // -- Progress indicator ------------------------------------------------------
-
-  function updateProgressIndicator(summaries) {
-    var checkedCount = 0;
-    for (var i = 0; i < summaries.length; i++) {
-      var checkbox = summaries[i].querySelector('input[type="checkbox"]');
-      if (checkbox && checkbox.checked) checkedCount++;
-    }
-
-    var text = checkedCount + ' of ' + summaries.length + ' sessions complete';
-    var existingIndicator = document.querySelector('.progress-indicator');
-    if (existingIndicator) {
-      existingIndicator.textContent = text;
-    } else {
-      var progressDiv = document.createElement('div');
-      progressDiv.className = 'progress-indicator';
-      progressDiv.textContent = text;
-      document.body.appendChild(progressDiv);
-    }
+  var stakes = document.getElementById('stakes');
+  if (stakes) {
+    if (state.stakes) stakes.value = state.stakes;
+    stakes.addEventListener('input', function () {
+      withState(function (next) {
+        if (stakes.value) next.stakes = stakes.value; else delete next.stakes;
+      });
+    });
   }
 
   // -- Export / import ----------------------------------------------------------
 
-  function exportProgress() {
-    var state = getStorage();
-    var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  var exportButton = document.getElementById('export-progress');
+  if (exportButton) exportButton.addEventListener('click', function () {
+    var blob = new Blob([JSON.stringify(getStorage(), null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = 'study-plan-progress.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = 'study-plan-progress.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }
+  });
 
-  function importProgress(event) {
-    var file = event.target.files[0];
+  var importInput = document.getElementById('import-progress');
+  if (importInput) importInput.addEventListener('change', function (event) {
+    var file = event.target.files && event.target.files[0];
     if (!file) return;
-
     var reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = function () {
       try {
-        var state = JSON.parse(e.target.result);
-        saveStorage(state);
+        saveStorage(JSON.parse(reader.result));
         window.location.reload();
-      } catch (err) {
-        alert('Invalid progress file format');
+      } catch (e) {
+        window.alert('Invalid progress file format');
       }
     };
     reader.readAsText(file);
+  });
+
+  // -- Theme: system default, or the viewer's explicit choice --------------------
+
+  var themeToggle = document.getElementById('theme-toggle');
+  var themeNames = ${JSON.stringify(THEME_NAMES)};
+
+  function labelToggle(theme) {
+    if (!themeToggle) return;
+    themeToggle.textContent = themeNames[theme];
+    themeToggle.setAttribute('aria-label', 'Colour theme: ' + themeNames[theme] + '. Activate to change.');
   }
 
-  function initExportImport() {
-    var controlDiv = document.createElement('div');
-    controlDiv.className = 'progress-controls';
-
-    var exportBtn = document.createElement('button');
-    exportBtn.className = 'progress-export-btn';
-    exportBtn.textContent = 'Export Progress';
-    exportBtn.onclick = exportProgress;
-
-    var importInput = document.createElement('input');
-    importInput.type = 'file';
-    importInput.accept = '.json';
-    importInput.onchange = importProgress;
-
-    var importLabel = document.createElement('label');
-    importLabel.className = 'progress-import-label';
-    importLabel.textContent = 'Import Progress';
-    importLabel.appendChild(importInput);
-
-    controlDiv.appendChild(exportBtn);
-    controlDiv.appendChild(importLabel);
-    document.body.prepend(controlDiv);
-  }
-
-  // -- Storage availability ------------------------------------------------------
-
-  function checkStorageAvailable() {
+  function applyTheme(theme) {
+    if (theme === 'system') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme);
+    labelToggle(theme);
     try {
-      localStorage.setItem('test', 'test');
-      localStorage.removeItem('test');
-    } catch (e) {
-      console.warn('localStorage not available, progress state will be volatile');
-      localStorage.removeItem('studyPlanProgress');
-    }
+      if (theme === 'system') window.localStorage.removeItem(themeKey);
+      else window.localStorage.setItem(themeKey, theme);
+    } catch (e) {}
   }
 
-  // -- Wire everything up ------------------------------------------------------
+  if (themeToggle) {
+    var stored = root.getAttribute('data-theme');
+    var current = stored === 'light' || stored === 'dark' ? stored : 'system';
+    labelToggle(current);
+    themeToggle.addEventListener('click', function () {
+      current = current === 'system' ? 'light' : current === 'light' ? 'dark' : 'system';
+      applyTheme(current);
+    });
+  }
 
-  var summaries = document.querySelectorAll('.session-summary');
-  initAccordion(summaries);
-  initCheckboxes(summaries);
-  initNotes();
-  initStakes();
-  expandLowestUnchecked(summaries);
-  updateProgressIndicator(summaries);
-  initExportImport();
-  checkStorageAvailable();
+  expandLowestUnchecked();
+  updateProgressIndicator();
 })();
 `.trim()
 
@@ -329,10 +604,14 @@ function renderMaterial(material: Material): string {
     : ''
   return (
     '<li class="material">' +
-    '<a class="material-link" href="' + esc(material.url) + '" target="_blank" rel="noopener">' +
+    '<div class="material-title"><a class="material-link" href="' +
+    esc(material.url) +
+    '" target="_blank" rel="noopener">' +
     esc(material.title) +
-    '</a>' +
-    '<span class="material-duration">' + esc(String(material.estimatedDuration)) + ' min</span>' +
+    '</a></div>' +
+    '<span class="duration material-duration">' +
+    esc(String(material.estimatedDuration)) +
+    ' min</span>' +
     paid +
     '</li>'
   )
@@ -340,20 +619,20 @@ function renderMaterial(material: Material): string {
 
 function renderSession(session: Session): string {
   const materials = session.materials.map(renderMaterial).join('')
-  const num = esc(String(session.number))
-  const detailId = 'session-detail-' + num
+  const sessionNo = esc(String(session.number))
+  const detailId = 'session-detail-' + sessionNo
   const hasUnresolved = session.materials.some(
-    (m) => m.verification.status === 'unresolved-after-retries'
+    (material) => material.verification.status === 'unresolved-after-retries'
   )
   const warning = hasUnresolved
-    ? '<span class="session-warning">⚠ A material for this session could not be verified</span>'
+    ? '<span class="tag warning session-warning">⚠ Unverified material</span>'
     : ''
   // One branch, both coupled outputs: the badge a reader sees and the
   // attribute the page's script and the tests select on cannot drift apart.
   const consolidation = session.consolidation
     ? {
         attribute: ' data-consolidation="true"',
-        badge: '<span class="session-consolidation">Consolidation</span>',
+        badge: '<span class="tag consolidation session-consolidation">Consolidation</span>',
       }
     : { attribute: '', badge: '' }
   const units =
@@ -366,24 +645,53 @@ function renderSession(session: Session): string {
       '</p>'
     : ''
   return (
-    '<section class="session" data-session="' + num + '"' +
+    '<section class="session" data-session="' +
+    sessionNo +
+    '"' +
     consolidation.attribute +
     '>' +
-    '<div class="session-summary" role="button" tabindex="0" aria-expanded="false" aria-controls="' + detailId + '">' +
-    '<input class="session-check" type="checkbox" data-session="' + num + '" aria-label="Mark session ' + num + ' complete">' +
-    '<span class="session-number">' + num + '</span>' +
-    '<span class="session-title">' + esc(session.title) + '</span>' +
+    '<div class="session-summary" role="button" tabindex="0" aria-expanded="false" aria-controls="' +
+    detailId +
+    '">' +
+    '<input class="session-check" type="checkbox" data-session="' +
+    sessionNo +
+    '" aria-label="Mark session ' +
+    sessionNo +
+    ' complete">' +
+    '<span class="session-number">' +
+    sessionNo +
+    '</span>' +
+    '<span class="session-title">' +
+    esc(session.title) +
+    '</span>' +
+    '<span class="session-artifact">' +
+    esc(session.artifactOneLiner) +
+    '</span>' +
+    '<span class="session-tags">' +
     consolidation.badge +
-    '<span class="session-artifact">' + esc(session.artifactOneLiner) + '</span>' +
     warning +
+    '</span>' +
     '</div>' +
-    '<div class="session-detail" id="' + detailId + '" hidden>' +
+    '<div class="session-detail" id="' +
+    detailId +
+    '" hidden>' +
+    '<div class="detail-block"><span class="detail-label">Materials</span>' +
+    '<ul class="materials">' +
+    materials +
+    '</ul></div>' +
     units +
     hook +
-    '<ul class="materials">' + materials + '</ul>' +
-    '<p class="self-check"><span class="self-check-label">Self-check:</span> ' + esc(session.selfCheck) + '</p>' +
-    '<label class="notes-label" for="notes-' + num + '">Notes' +
-    '<textarea class="notes-area" id="notes-' + num + '" data-session="' + num + '" placeholder="What worked, what did not, what to review."></textarea>' +
+    '<p class="self-check"><span class="self-check-label">Self-check</span>' +
+    esc(session.selfCheck) +
+    '</p>' +
+    '<label class="notes-label" for="notes-' +
+    sessionNo +
+    '">Notes' +
+    '<textarea class="notes-area" id="notes-' +
+    sessionNo +
+    '" data-session="' +
+    sessionNo +
+    '" placeholder="What worked, what did not, what to review."></textarea>' +
     '</label>' +
     '</div>' +
     '</section>'
@@ -392,27 +700,61 @@ function renderSession(session: Session): string {
 
 function renderPreamble(plan: PlanData): string {
   const p = plan.disssPreamble
+  const reasons = [
+    ['Deconstruction', p.deconstruction],
+    ['Selection rationale', p.selectionRationale],
+    ['Cut list', p.cutList],
+    ['Sequencing rationale', p.sequencingRationale],
+  ]
+    .map(
+      ([label, text]) =>
+        '<div class="reason"><span class="reason-label">' +
+        esc(label) +
+        '</span><p class="reason-text">' +
+        esc(text) +
+        '</p></div>'
+    )
+    .join('')
   return (
     '<section class="preamble">' +
-    '<h2>How this plan was built (DISSS)</h2>' +
-    '<dl>' +
-    '<dt>Deconstruction</dt><dd>' + esc(p.deconstruction) + '</dd>' +
-    '<dt>Selection rationale</dt><dd>' + esc(p.selectionRationale) + '</dd>' +
-    '<dt>Cut list</dt><dd>' + esc(p.cutList) + '</dd>' +
-    '<dt>Sequencing rationale</dt><dd>' + esc(p.sequencingRationale) + '</dd>' +
-    '</dl>' +
+    '<div class="section-heading"><h2>How this plan was built (DISSS)</h2></div>' +
+    '<div class="preamble-grid">' +
+    reasons +
+    '</div>' +
     '</section>'
+  )
+}
+
+// A contiguous run reads as a range ("Sessions 1–6"); anything else is only a count.
+function phaseSpanLabel(sessions: number[]): string {
+  const first = sessions[0]
+  if (first === undefined) return ''
+  const contiguous = sessions.every((number, i) => number === first + i)
+  return contiguous
+    ? 'Sessions ' + first + '–' + sessions[sessions.length - 1]
+    : sessions.length + ' sessions'
+}
+
+function renderPhaseBand(phase: Phase, index: number): string {
+  const spanLabel = phaseSpanLabel(phase.sessions)
+  return (
+    '<div class="phase-band"><div class="phase-title-wrap"><span class="phase-no">' +
+    esc(String(index + 1).padStart(2, '0')) +
+    '</span><span class="phase-title">' +
+    esc(phase.title) +
+    '</span></div><span class="phase-meta">' +
+    esc(spanLabel) +
+    '</span></div>'
   )
 }
 
 export function renderPlan(plan: PlanData): string {
   const rendered = new Set<number>()
   let sessionsHtml = ''
-  for (const phase of plan.phases) {
-    sessionsHtml +=
-      '<div class="phase-band"><span class="phase-title">' + esc(phase.title) + '</span></div>'
+  for (const [index, phase] of plan.phases.entries()) {
+    sessionsHtml += renderPhaseBand(phase, index)
     for (const number of phase.sessions) {
-      const session = plan.sessions.find((s) => s.number === number)
+      const session = plan.sessions.find((candidate) => candidate.number === number)
       if (!session || rendered.has(number)) continue
       rendered.add(number)
       sessionsHtml += renderSession(session)
@@ -424,8 +766,9 @@ export function renderPlan(plan: PlanData): string {
     sessionsHtml += renderSession(session)
   }
 
+  const sessionCount = esc(String(plan.sessions.length))
   const scopeNote = plan.scopeNote
-    ? '<aside class="scope-note"><strong>Scope:</strong> ' + esc(plan.scopeNote) + '</aside>'
+    ? '<aside class="scope-note"><p><strong>Scope:</strong> ' + esc(plan.scopeNote) + '</p></aside>'
     : ''
 
   return (
@@ -434,23 +777,54 @@ export function renderPlan(plan: PlanData): string {
     '<head>' +
     '<meta charset="UTF-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>' + esc(plan.meta.subject) + ' — 14-Session Study Plan</title>' +
-    '<style>' + STYLE + '</style>' +
+    '<title>' +
+    esc(plan.meta.subject) +
+    ' — 14-Session Study Plan</title>' +
+    '<style>' +
+    STYLE +
+    '</style>' +
+    '<script>' +
+    THEME_BOOT +
+    '</script>' +
     '</head>' +
     '<body>' +
+    '<div class="ledger-app">' +
+    '<header class="masthead">' +
+    '<p class="eyebrow">14-Session Study Plan</p>' +
+    '<button class="mode-button" id="theme-toggle" type="button" aria-label="Colour theme: ' +
+    esc(THEME_NAMES.system) +
+    '. Activate to change.">' +
+    esc(THEME_NAMES.system) +
+    '</button>' +
+    '</header>' +
     '<main class="page">' +
-    '<h1>' + esc(plan.meta.subject) + '</h1>' +
+    '<section class="hero"><div><h1>' +
+    esc(plan.meta.subject) +
+    '</h1><p class="hero-target"><strong>Target:</strong> ' +
+    esc(plan.meta.targetCapability) +
+    '</p>' +
     scopeNote +
-    '<p class="meta">Target: ' + esc(plan.meta.targetCapability) + ' · Level: ' + esc(plan.meta.currentLevel) +
-    ' · Hours/day: ' + esc(String(plan.meta.hoursPerDay)) + '</p>' +
-    '<div class="stakes-field">' +
-    '<label for="stakes">Stakes</label>' +
-    '<input id="stakes" type="text" value="' + esc(plan.stakes) + '" placeholder="Set a real consequence for abandoning this sprint.">' +
-    '</div>' +
+    '</div><aside class="hero-aside" aria-label="Plan summary"><div class="aside-rule"></div><div class="aside-stat"><span class="aside-label">Sessions</span><span class="aside-value">' +
+    sessionCount +
+    '</span></div><div class="aside-stat"><span class="aside-label">Hours / day</span><span class="aside-value">' +
+    esc(String(plan.meta.hoursPerDay)) +
+    '</span></div><div class="aside-stat"><span class="aside-label">Current level</span><span class="aside-value">' +
+    esc(plan.meta.currentLevel) +
+    '</span></div></aside></section>' +
+    '<div class="stakes-field"><label class="stakes-label" for="stakes">Stakes</label><input class="stakes-input" id="stakes" type="text" value="' +
+    esc(plan.stakes) +
+    '" placeholder="Set a real consequence for abandoning this sprint."></div>' +
     renderPreamble(plan) +
+    '<section class="section-heading plan-heading"><h2>The sessions</h2></section>' +
     sessionsHtml +
     '</main>' +
-    '<script>' + SCRIPT + '</script>' +
+    '<footer class="progress-spine"><div class="spine-inner"><div class="progress-indicator" role="status" aria-live="polite">0 of ' +
+    sessionCount +
+    ' sessions complete</div><div class="progress-track" aria-hidden="true"><div class="progress-fill" id="progress-fill"></div></div><div class="footer-actions"><button class="footer-action" id="export-progress" type="button">Export Progress</button><label class="footer-action progress-import-label" for="import-progress">Import Progress<input id="import-progress" type="file" accept=".json"></label></div></div></footer>' +
+    '</div>' +
+    '<script>' +
+    SCRIPT +
+    '</script>' +
     '</body>' +
     '</html>'
   )

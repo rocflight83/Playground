@@ -438,3 +438,93 @@ describe('the renderer is a pure, deterministic function of the plan data', () =
     expect(html).not.toContain('<img src=x')
   })
 })
+
+describe('the page is a quiet document that supports light and dark (issue 10)', () => {
+  const css = () => renderPlan(fixturePlan).match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? ''
+
+  it('paints the page background explicitly so it never renders transparent', () => {
+    expect(css()).toMatch(/\bbody\s*\{[^}]*background:\s*var\(--paper\)/)
+  })
+
+  it('declares palettes for the system default and for an explicit light or dark choice', () => {
+    const style = css()
+    expect(style).toMatch(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{[^}]*color-scheme:\s*dark/)
+    expect(style).toMatch(/html\[data-theme="light"\]\s*\{[^}]*color-scheme:\s*light/)
+    expect(style).toMatch(/html\[data-theme="dark"\]\s*\{[^}]*color-scheme:\s*dark/)
+  })
+
+  it('follows the system theme by default and cycles through explicit choices on the toggle', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const root = dom.window.document.documentElement
+    const toggle = dom.window.document.getElementById('theme-toggle') as HTMLButtonElement
+    expect(root.getAttribute('data-theme')).toBeNull()
+    toggle.click()
+    expect(root.getAttribute('data-theme')).toBe('light')
+    toggle.click()
+    expect(root.getAttribute('data-theme')).toBe('dark')
+    toggle.click()
+    expect(root.getAttribute('data-theme')).toBeNull()
+  })
+
+  it('remembers an explicit theme choice across reloads without touching progress state', () => {
+    const html = renderPlan(fixturePlan)
+    const dom = loadWithStorage(html)
+    const toggle = dom.window.document.getElementById('theme-toggle') as HTMLButtonElement
+    toggle.click()
+    toggle.click()
+    expect(dom.window.localStorage.getItem('studyPlanProgress')).toBeNull()
+    expect(dom.window.localStorage.getItem('studyPlanTheme')).toBe('dark')
+
+    const reloaded = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: 'https://example.com/',
+      beforeParse(window) {
+        window.localStorage.setItem('studyPlanTheme', 'dark')
+      },
+    })
+    expect(reloaded.window.document.documentElement.getAttribute('data-theme')).toBe('dark')
+  })
+
+  it('writes nothing to storage merely by loading', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    expect(dom.window.localStorage.getItem('studyPlanProgress')).toBeNull()
+  })
+
+  it('leaves the accordion alone when a session is checked off', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const doc = dom.window.document
+    const detailFor = (n: number) =>
+      doc.querySelector(`.session[data-session="${n}"] .session-detail`) as HTMLElement
+    const checkbox = doc.querySelector(
+      '.session[data-session="1"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    expect(detailFor(1).hidden).toBe(false)
+    checkbox.checked = true
+    checkbox.dispatchEvent(new dom.window.Event('change'))
+    expect(detailFor(1).hidden).toBe(false)
+    expect(detailFor(2).hidden).toBe(true)
+  })
+
+  it('labels each phase band with the sessions it spans', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const bands = Array.from(doc.querySelectorAll('.phase-band')).map((b) => b.textContent ?? '')
+    expect(bands[0]).toContain('Fundamentals')
+    expect(bands[0]).toContain('Sessions 1–6')
+    expect(bands[2]).toContain('Sessions 12–14')
+  })
+
+  it('keeps one persistent, fixed progress spine that carries the indicator', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const spine = doc.querySelector('.progress-spine')
+    expect(spine).not.toBeNull()
+    expect(spine?.querySelector('.progress-indicator')).not.toBeNull()
+    expect(doc.querySelectorAll('.progress-indicator').length).toBe(1)
+    expect(css()).toMatch(/\.progress-spine\s*\{[^}]*position:\s*fixed/)
+  })
+
+  it('states the target capability and level near the top', () => {
+    const html = renderPlan(fixturePlan)
+    expect(html.indexOf(fixturePlan.meta.targetCapability)).toBeLessThan(html.indexOf('class="session"'))
+    expect(html.indexOf(fixturePlan.meta.currentLevel)).toBeLessThan(html.indexOf('class="session"'))
+  })
+})
