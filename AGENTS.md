@@ -9,10 +9,11 @@ structured **plan data** into a single self-contained HTML page and, later,
 verifies links. The generator never emits HTML directly — data and rendering
 are strictly separated.
 
-Current state: tickets 01–05 are in place — the renderer seam, progress
+Current state: tickets 01–06 are in place — the renderer seam, progress
 state, validation + verification, generate mode, and sourcing depth
-(tiered discovery with off-list admission). The planning intelligence lives
-in the `/study-plan` skill at `.claude/skills/study-plan/SKILL.md`; it
+(tiered discovery with off-list admission), and scope honesty (a reframed
+target and its scope note are validated as a pair and rendered together).
+The planning intelligence lives in the `/study-plan` skill at `.claude/skills/study-plan/SKILL.md`; it
 writes plan data and calls `npm run generate`, which validates, verifies
 and renders it into a slug-named directory. Verify-on-demand and
 per-session redo modes are still open tickets (see

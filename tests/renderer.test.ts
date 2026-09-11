@@ -111,19 +111,36 @@ describe('rendering produces a complete, self-contained document', () => {
 })
 
 describe('the page reads as a study plan', () => {
-  it('shows the scope note prominently near the top', () => {
+  it('shows the scope note prominently near the top, naming both the stated and the honest target', () => {
     const html = renderPlan(fixturePlan)
     const doc = structure(html)
-    expect(doc.querySelector('.scope-note')?.textContent).toContain(fixturePlan.scopeNote!)
+    const note = doc.querySelector('.scope-note')
+    expect(note).not.toBeNull()
+    const text = note!.textContent ?? ''
+    expect(text).toContain('You asked for: ' + fixturePlan.meta.targetCapability)
+    expect(text).toContain(
+      'In 14 sessions at ' + fixturePlan.meta.hoursPerDay + ' hours a day, the honest target is: ' + fixturePlan.meta.honestTarget
+    )
+    expect(text).toContain(fixturePlan.scopeNote!)
     expect(html.indexOf('scope-note')).toBeLessThan(html.indexOf('class="session"'))
   })
 
-  it('omits the scope note when the targets do not diverge', () => {
+  it('aims the hero target line at the honest target when one exists', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const hero = doc.querySelector('.hero-target')?.textContent ?? ''
+    expect(hero).toContain(fixturePlan.meta.honestTarget!)
+    expect(hero).not.toContain(fixturePlan.meta.targetCapability)
+  })
+
+  it('omits the scope note and shows the stated target when the targets do not diverge', () => {
     const plan = clonePlan(fixturePlan)
+    delete plan.meta.honestTarget
     delete plan.scopeNote
     const doc = structure(renderPlan(plan))
     expect(doc.querySelector('.scope-note')).toBeNull()
     expect(doc.body.textContent).not.toContain(fixturePlan.scopeNote!)
+    expect(doc.body.textContent).not.toContain('You asked for')
+    expect(doc.querySelector('.hero-target')?.textContent).toContain(plan.meta.targetCapability)
   })
 
   it('renders a stakes field near the top', () => {

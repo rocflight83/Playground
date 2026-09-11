@@ -24,15 +24,59 @@ plan out.
 
 ### 1. Set an honest target
 
-Decide whether the target capability is reachable in 14 sessions at the stated
-hours. Targets needing physical adaptation, credentialing, or deep domain
-mastery are not.
+Before any planning, decide whether the **target capability** is reachable in
+14 sessions at the stated hours per day. Answer these three questions; a
+"yes" to any of them means the target is **not** reachable as stated:
 
-When the honest target differs from the stated one, **reframe rather than
-refuse**: write the reachable version to `meta.honestTarget` and say plainly in
-`scopeNote` what the learner will and will not be able to do. The scope note is
-a first-class output, not an apology. Both fields stay absent when the stated
-target is already honest.
+1. **Physical adaptation?** Does reaching it require the body to change —
+   strength, endurance, flexibility, callus, reaction time trained over
+   months? (Add 200lb to a deadlift; run a sub-3 marathon; play a Chopin
+   étude at tempo from scratch.)
+2. **Credentialing?** Does reaching it require an exam, licence, degree,
+   certification, or someone else\'s sign-off? (Become a neurosurgeon; pass
+   the bar; get a pilot\'s licence.)
+3. **Genuinely deep mastery?** Would an honest expert say it takes years of
+   accumulated exposure regardless of hours per day? (Fluent Mandarin;
+   contribute a new result in algebraic topology; be hired as a senior
+   compiler engineer.)
+
+Also fail the target if 14 × hoursPerDay hours is plainly too little for it
+even without those three — for example a 40-hour target at 1 hour a day.
+
+**If all three answers are "no" and the hours fit:** the stated target is
+honest. Leave `meta.honestTarget` and `scopeNote` **absent** (not empty
+strings — omit the fields). Validation rejects an `honestTarget` identical to
+`targetCapability`, so do not copy it across.
+
+**If the target is not reachable:** reframe, never refuse, and never plan
+the wish as if it were reachable. A plan is always produced. To reframe:
+
+- Keep the **subject** and the learner\'s **motive**; shrink the **outcome**
+  to the load-bearing fraction reachable in 14 sessions. The honest target
+  must be a real step *on the road to* the stated one, not a substitute
+  topic. "Become a neurosurgeon" → "Read a head CT for the six most common
+  emergencies and explain the surgical decision for each", not "learn
+  first aid". "Add 200lb to my deadlift" → "Own a technically sound
+  deadlift, a 14-session programme I can run, and a baseline 1RM to build
+  from", not "learn about nutrition".
+- Write the reframed outcome to `meta.honestTarget`. Phrase it like a
+  target capability: something the learner can do at session 14.
+- Write `scopeNote` using this template, filling every bracket in the
+  learner\'s own words from the invocation:
+
+  > You asked for [stated target]. In 14 sessions at [N] hours a day the
+  > honest target is [honest target]. [One or two sentences: what makes the
+  > stated target out of reach in this window, and what the honest target
+  > gives the learner toward it.]
+
+  The rendered page adds the two targets around the note itself, so the
+  note\'s job is the plain reasoning. It is a first-class output, not an
+  apology: state it flatly, in the same voice as the rest of the plan.
+- Every one of the 14 sessions then aims at `honestTarget`. If a session\'s
+  artifact only makes sense for the original wish, it is the wrong artifact.
+
+Both fields travel together: `honestTarget` without `scopeNote`, or
+`scopeNote` without `honestTarget`, is rejected by validation.
 
 ### 2. Deconstruct, select, sequence
 

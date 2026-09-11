@@ -28,6 +28,32 @@ export function validatePlan(plan: PlanData): ValidationError[] {
   require_(errors, plan.meta.currentLevel, 'meta.currentLevel is required')
   require_(errors, plan.meta.hoursPerDay, 'meta.hoursPerDay is required')
   require_(errors, plan.meta.generatedAt, 'meta.generatedAt is required')
+  // Scope honesty: a reframed target and the note explaining it travel
+  // together. One without the other is either a silent reframe (sessions
+  // aim at something the learner was never told about) or a note that names
+  // nothing. Identical targets mean no divergence, so both must be omitted.
+  if (plan.meta.honestTarget !== undefined && typeof plan.meta.honestTarget !== 'string') {
+    errors.push('meta.honestTarget must be a string when present')
+  }
+  if (plan.scopeNote !== undefined && typeof plan.scopeNote !== 'string') {
+    errors.push('scopeNote must be a string when present')
+  }
+  const statedTarget = typeof plan.meta.targetCapability === 'string' ? plan.meta.targetCapability.trim() : ''
+  const honestTarget = typeof plan.meta.honestTarget === 'string' ? plan.meta.honestTarget.trim() : ''
+  const scopeNote = typeof plan.scopeNote === 'string' ? plan.scopeNote.trim() : ''
+  if (honestTarget && !scopeNote) {
+    errors.push(
+      'scopeNote is required when meta.honestTarget is set: a reframed target must be stated at the top of the plan'
+    )
+  }
+  if (scopeNote && !honestTarget) {
+    errors.push('meta.honestTarget is required when scopeNote is set: the scope note must name the reframed target')
+  }
+  if (honestTarget && honestTarget === statedTarget) {
+    errors.push(
+      'meta.honestTarget must differ from meta.targetCapability; omit both honestTarget and scopeNote when the stated target is already honest'
+    )
+  }
   // Stakes are the learner's to write, on the page, after generation. The
   // field must exist; it is empty at generation time by design.
   require_(errors, typeof plan.stakes === 'string', 'stakes is required')

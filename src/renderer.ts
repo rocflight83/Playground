@@ -190,6 +190,8 @@ h1 {
   background: var(--accent-wash);
 }
 .scope-note p { margin: 0; color: var(--ink); font-size: 16px; overflow-wrap: anywhere; }
+.scope-note p + p { margin-top: 8px; }
+.scope-note span { font-weight: 650; }
 .scope-note strong { color: var(--accent-strong); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
 
 .stakes-field {
@@ -767,8 +769,29 @@ export function renderPlan(plan: PlanData): string {
   }
 
   const sessionCount = esc(String(plan.sessions.length))
+  // Both targets come from meta, not from the prose, so the note always
+  // names what was asked and what the sessions actually aim at even when a
+  // hand-edited scopeNote forgets to.
+  const hoursWord = plan.meta.hoursPerDay === 1 ? 'hour' : 'hours'
   const scopeNote = plan.scopeNote
-    ? '<aside class="scope-note"><p><strong>Scope:</strong> ' + esc(plan.scopeNote) + '</p></aside>'
+    ? '<aside class="scope-note" aria-label="Scope">' +
+      '<p><strong>Scope</strong></p>' +
+      '<p class="scope-stated">You asked for: <span>' +
+      esc(plan.meta.targetCapability) +
+      '</span></p>' +
+      '<p class="scope-honest">In ' +
+      sessionCount +
+      ' sessions at ' +
+      esc(String(plan.meta.hoursPerDay)) +
+      ' ' +
+      hoursWord +
+      ' a day, the honest target is: <span>' +
+      esc(plan.meta.honestTarget ?? '') +
+      '</span></p>' +
+      '<p class="scope-reason">' +
+      esc(plan.scopeNote) +
+      '</p>' +
+      '</aside>'
     : ''
 
   return (
@@ -801,7 +824,7 @@ export function renderPlan(plan: PlanData): string {
     '<section class="hero"><div><h1>' +
     esc(plan.meta.subject) +
     '</h1><p class="hero-target"><strong>Target:</strong> ' +
-    esc(plan.meta.targetCapability) +
+    esc(plan.meta.honestTarget ?? plan.meta.targetCapability) +
     '</p>' +
     scopeNote +
     '</div><aside class="hero-aside" aria-label="Plan summary"><div class="aside-rule"></div><div class="aside-stat"><span class="aside-label">Sessions</span><span class="aside-value">' +

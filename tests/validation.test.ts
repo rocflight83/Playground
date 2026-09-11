@@ -117,6 +117,40 @@ describe('validatePlan', () => {
     expect(errors.some((e) => e.includes('session 1 must name at least one high-frequency unit'))).toBe(true)
   })
 
+  it('accepts a plan with neither honestTarget nor scopeNote (targets do not diverge)', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.meta.honestTarget
+    delete plan.scopeNote
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('rejects a reframed target that has no scope note (silent reframing)', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.scopeNote
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'scopeNote is required when meta.honestTarget is set: a reframed target must be stated at the top of the plan'
+    )
+  })
+
+  it('rejects a scope note that names no reframed target', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.meta.honestTarget
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'meta.honestTarget is required when scopeNote is set: the scope note must name the reframed target'
+    )
+  })
+
+  it('rejects an honest target identical to the stated target', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.meta.honestTarget = plan.meta.targetCapability
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'meta.honestTarget must differ from meta.targetCapability; omit both honestTarget and scopeNote when the stated target is already honest'
+    )
+  })
+
   it('rejects a plan where no unit is repeated across sessions', () => {
     const plan = clonePlan(fixturePlan)
     plan.sessions.forEach((s, i) => {

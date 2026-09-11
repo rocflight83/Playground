@@ -10,16 +10,16 @@ This is a small behaviour that carries a lot of the tool's value, and it is the 
 
 **User stories covered:** 5, 6, 7.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Before planning, the generator evaluates whether the stated target is achievable in 14 sessions at the stated hours
-- [ ] Targets requiring physical adaptation, credentialing, or genuinely deep domain mastery are recognised as not achievable
-- [ ] An unachievable target is reframed rather than refused; a plan is still produced
-- [ ] The reframed target is the load-bearing fraction of what was asked, not an unrelated substitute
-- [ ] When stated and honest targets diverge, the scope note renders prominently at the top, naming both
-- [ ] When they do not diverge, no scope note appears
-- [ ] An unachievable target is never silently planned as though it were achievable
-- [ ] The plan's sessions target the reframed capability, not the original wish
+- [x] Before planning, the generator evaluates whether the stated target is achievable in 14 sessions at the stated hours
+- [x] Targets requiring physical adaptation, credentialing, or genuinely deep domain mastery are recognised as not achievable
+- [x] An unachievable target is reframed rather than refused; a plan is still produced
+- [x] The reframed target is the load-bearing fraction of what was asked, not an unrelated substitute
+- [x] When stated and honest targets diverge, the scope note renders prominently at the top, naming both
+- [x] When they do not diverge, no scope note appears
+- [x] An unachievable target is never silently planned as though it were achievable
+- [x] The plan's sessions target the reframed capability, not the original wish
 
 ---
 
@@ -535,3 +535,7 @@ All of the following are true:
 - The checklist at the top of this file is all `[x]` and Status is `done`.
 - Your final report lists: the commit hash, the test count before and
   after, and whether the `gh` commands ran.
+
+## Comments
+
+- 2026-09-11: implemented; validation couples honestTarget/scopeNote, renderer names both targets, skill step 1 is a decision procedure.

@@ -47,11 +47,17 @@ export interface PlanData {
   meta: {
     subject: string
     targetCapability: string
+    /**
+     * The reachable version of `targetCapability`, present only when the two
+     * diverge. Travels with `scopeNote`: validation rejects one without the
+     * other, and rejects an honestTarget identical to targetCapability.
+     */
     honestTarget?: string
     hoursPerDay: number
     currentLevel: string
     generatedAt: string
   }
+  /** Plain statement of the reframing, rendered at the top. Present iff `meta.honestTarget` is. */
   scopeNote?: string
   disssPreamble: {
     deconstruction: string
