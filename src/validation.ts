@@ -41,6 +41,12 @@ export function validatePlan(plan: PlanData): ValidationError[] {
   const statedTarget = typeof plan.meta.targetCapability === 'string' ? plan.meta.targetCapability.trim() : ''
   const honestTarget = typeof plan.meta.honestTarget === 'string' ? plan.meta.honestTarget.trim() : ''
   const scopeNote = typeof plan.scopeNote === 'string' ? plan.scopeNote.trim() : ''
+  const hasEmptyScopeHonestyField =
+    (plan.meta.honestTarget !== undefined && typeof plan.meta.honestTarget === 'string' && !honestTarget) ||
+    (plan.scopeNote !== undefined && typeof plan.scopeNote === 'string' && !scopeNote)
+  if (hasEmptyScopeHonestyField) {
+    errors.push('meta.honestTarget and scopeNote must be omitted, not empty, when the stated target is already honest')
+  }
   if (honestTarget && !scopeNote) {
     errors.push(
       'scopeNote is required when meta.honestTarget is set: a reframed target must be stated at the top of the plan'

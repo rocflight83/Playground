@@ -151,6 +151,30 @@ describe('validatePlan', () => {
     )
   })
 
+  it('rejects empty or whitespace-only scope honesty fields', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.meta.honestTarget = ' '
+    plan.scopeNote = ''
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'meta.honestTarget and scopeNote must be omitted, not empty, when the stated target is already honest'
+    )
+
+    plan.meta.honestTarget = ''
+    plan.scopeNote = ' '
+    const secondErrors = validatePlan(plan)
+    expect(secondErrors).toContain(
+      'meta.honestTarget and scopeNote must be omitted, not empty, when the stated target is already honest'
+    )
+
+    plan.meta.honestTarget = ''
+    plan.scopeNote = ''
+    const emptyErrors = validatePlan(plan)
+    expect(emptyErrors).toContain(
+      'meta.honestTarget and scopeNote must be omitted, not empty, when the stated target is already honest'
+    )
+  })
+
   it('rejects a plan where no unit is repeated across sessions', () => {
     const plan = clonePlan(fixturePlan)
     plan.sessions.forEach((s, i) => {
