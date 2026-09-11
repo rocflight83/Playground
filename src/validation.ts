@@ -90,11 +90,14 @@ export function validatePlan(plan: PlanData): ValidationError[] {
         errors.push(`session ${session.number} paid material must have a positive price`)
       }
       require_(errors, material.verification, `session ${session.number} material verification is required`)
-      // Ticket 04 draws from the durable tier only; off-list admission is
-      // ticket 05's job, and verification already knows how to vet one.
-      if (material.sourceType !== 'preferred') {
+      // Sourcing is tiered: discovery prefers the durable tier, and off-list
+      // sources are admitted only when they are genuinely the best available.
+      // Verification — not the gate — enforces the off-list bar: a status-only
+      // pass never suffices for one; the page has to be fetched and confirmed
+      // to cover the claimed concept.
+      if (material.sourceType !== 'preferred' && material.sourceType !== 'off-list') {
         errors.push(
-          `session ${session.number} material must come from the preferred durable tier, found '${material.sourceType}'`
+          `session ${session.number} material sourceType must be 'preferred' or 'off-list', found '${material.sourceType}'`
         )
       }
     }

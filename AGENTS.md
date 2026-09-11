@@ -9,13 +9,14 @@ structured **plan data** into a single self-contained HTML page and, later,
 verifies links. The generator never emits HTML directly — data and rendering
 are strictly separated.
 
-Current state: tickets 01–04 are in place — the renderer seam, progress
-state, validation + verification, and generate mode. The planning
-intelligence lives in the `/study-plan` skill at
-`.claude/skills/study-plan/SKILL.md`; it writes plan data and calls
-`npm run generate`, which validates, verifies and renders it into a
-slug-named directory. Verify-on-demand and per-session redo modes are still
-open tickets (see `.scratch/study-plan-generator/`).
+Current state: tickets 01–05 are in place — the renderer seam, progress
+state, validation + verification, generate mode, and sourcing depth
+(tiered discovery with off-list admission). The planning intelligence lives
+in the `/study-plan` skill at `.claude/skills/study-plan/SKILL.md`; it
+writes plan data and calls `npm run generate`, which validates, verifies
+and renders it into a slug-named directory. Verify-on-demand and
+per-session redo modes are still open tickets (see
+`.scratch/study-plan-generator/`).
 
 ## Build and test commands
 

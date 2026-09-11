@@ -130,11 +130,18 @@ describe('validatePlan', () => {
     expect(validatePlan(fixturePlan)).toEqual([])
   })
 
-  it('rejects a material that is not from the preferred durable tier', () => {
+  it('accepts an off-list material — the durable tier is the default, not the only tier (issue 05)', () => {
     const plan = clonePlan(fixturePlan)
     plan.sessions[0].materials[0].sourceType = 'off-list'
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('rejects a material whose sourceType is neither preferred nor off-list', () => {
+    const plan = clonePlan(fixturePlan)
+    // @ts-expect-error deliberately malformed for the test
+    plan.sessions[0].materials[0].sourceType = 'unknown'
     const errors = validatePlan(plan)
-    expect(errors.some((e) => e.includes('session 1 material must come from the preferred durable tier'))).toBe(true)
+    expect(errors.some((e) => e.includes("sourceType must be 'preferred' or 'off-list'"))).toBe(true)
   })
 
   it("rejects a session whose materials total more than the session's stated time", () => {

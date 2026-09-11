@@ -6,6 +6,7 @@ import type { PlanData } from '../src/plan-types'
 import { generatePlan, ValidationFailedError, type FileSystemAdapter } from '../src/generate'
 import type { FetchLike, ReplacementCandidate } from '../src/verification'
 import { fixturePlan } from './fixtures/plan-fixture'
+import { nicheFixturePlan } from './fixtures/niche-plan-fixture'
 
 class MemoryFileSystem implements FileSystemAdapter {
   files = new Map<string, string>()
@@ -323,5 +324,47 @@ describe('end-to-end demo: a well-served subject produces a usable site', () => 
     expectPathEndsWith(second.planDir, 'python-programming-2')
     await expect(readFile(first.planPath, 'utf8')).resolves.toContain('"subject"')
     await expect(readFile(second.planPath, 'utf8')).resolves.toContain('"subject"')
+  })
+
+  // Issue 05 demo: a subject the durable tier cannot fully serve (no MIT
+  // course on competitive barbecue). Under ticket 04 this plan would have
+  // been refused at validation because every BBQ-specific material was
+  // off-list. Under this ticket it lands on disk as a full, verified plan.
+  it('Competition Barbecue (niche, mostly off-list) writes a usable plan directory to disk', async () => {
+    const result = await generatePlan(nicheFixturePlan, baseDir, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+
+    expectPathEndsWith(result.planDir, 'competition-barbecue-smoking')
+
+    const written = JSON.parse(await readFile(result.planPath, 'utf8')) as PlanData
+
+    // Demo: the niche subject is genuinely covered by off-list sources — the
+    // ticket-04 gate would have rejected the same plan for sourceType. This
+    // is the "thin or warning-marked before" half of the ticket's contrast:
+    // the plan data could not have shipped under ticket 04.
+    const sourceTypes = new Set(written.sessions.flatMap((s) => s.materials.map((m) => m.sourceType)))
+    expect(sourceTypes.has('off-list')).toBe(true)
+
+    // Demo: every session still completable from free materials alone, and
+    // every paid item is recorded (here: zero, but the invariant holds).
+    const paid = written.sessions.flatMap((s) => s.materials).filter((m) => m.paid)
+    expect(paid.length).toBeLessThanOrEqual(1)
+    for (const session of written.sessions) {
+      expect(session.materials.some((m) => !m.paid)).toBe(true)
+    }
+
+    // Demo: the page read back off disk is genuinely usable — all 14
+    // sessions in order, no network reference at view time.
+    const html = await readFile(result.htmlPath, 'utf8')
+    expect(html).not.toMatch(/<link\b/i)
+    expect(html).not.toMatch(/<script[^>]*\bsrc\s*=/i)
+    const doc = new JSDOM(html).window.document
+    const sessionNumbers = Array.from(doc.querySelectorAll('.session')).map((el) =>
+      Number(el.getAttribute('data-session'))
+    )
+    expect(sessionNumbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
   })
 })

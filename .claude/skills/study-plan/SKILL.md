@@ -76,8 +76,20 @@ are not. Write the artifact and self-check so both readings work.
 
 ### 4. Source the materials
 
-Durable tier only — see [Preferred sources](#preferred-sources). Off-list
-sources are rejected by validation in this mode.
+Discovery is tiered. **Start from the preferred tier** — see
+[Preferred sources](#preferred-sources) — and only reach off-list when an
+off-list resource is genuinely the best available for what the session needs.
+A subject well served by the preferred tier should stay there. A niche subject
+where no preferred-tier source covers a needed concept gets off-list fallbacks
+rather than a thin plan.
+
+Off-list sources carry a higher bar: the page is fetched and the body
+**confirmed to cover the claimed concept** before the resource enters the
+plan. A status-only pass never suffices for an off-list source — verification
+rejects it as `unresolved-after-retries`. The plan's three-to-five anchor
+resources (the materials the plan leans on most) are content-verified
+**regardless of tier**, so a preferred-tier anchor is held to the same
+standard.
 
 At most **one paid material in the whole plan**, with its `price` set, and
 every session must remain completable from free materials alone. Both enforced.
