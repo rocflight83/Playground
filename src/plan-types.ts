@@ -20,6 +20,8 @@ export interface Session {
   materials: Material[]
   selfCheck: string
   estimatedTime: number
+  /** True for sessions 6 and 11, which are catch-up / spaced-review slots. */
+  consolidation?: boolean
 }
 
 export interface Phase {
@@ -53,3 +55,6 @@ export interface PlanData {
   phases: Phase[]
   sessions: Session[]
 }
+
+/** The session numbers reserved for consolidation (catch-up / spaced-review) slots. */
+export const CONSOLIDATION_SLOTS: ReadonlySet<number> = new Set([6, 11])

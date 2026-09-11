@@ -19,13 +19,13 @@ export const fixturePlan: PlanData = {
     cutList:
       'Removed: advanced metaclasses, decorators beyond basic usage, async/await beyond basic patterns, and object-oriented design patterns. These are valuable but not essential for building CLI tools.',
     sequencingRationale:
-      'Started from the endgame (building a working CLI tool) and worked backwards to identify prerequisite skills, rather than teaching Python fundamentals in textbook order.',
+      'Plan runs backwards from the endgame of shipping an installable CLI tool — every session is justified by what it enables for the artifact that follows. Consolidation slots at positions 6 and 11 double as catch-up when behind and spaced review when on schedule; sessions are otherwise textbook-shaped because each one depends on the last.',
   },
   stakes: 'If I cannot build a working CLI tool by session 14, I will reevaluate my learning approach.',
   phases: [
     {
       title: 'Fundamentals',
-      sessions: [1, 2, 3, 4, 5],
+      sessions: [1, 2, 3, 4, 5, 6],
       outlierStory: {
         person: 'A self-taught developer documented on BeginnersBook',
         approach: 'Learned Python in days by focusing only on list comprehensions and file I/O',
@@ -35,11 +35,11 @@ export const fixturePlan: PlanData = {
     },
     {
       title: 'Application',
-      sessions: [6, 7, 8, 9, 10],
+      sessions: [7, 8, 9, 10, 11],
     },
     {
       title: 'Polish & Deploy',
-      sessions: [11, 12, 13, 14],
+      sessions: [12, 13, 14],
     },
   ],
   sessions: [
@@ -57,10 +57,10 @@ export const fixturePlan: PlanData = {
           verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:10:00.000Z' },
         },
         {
-          title: 'W3Schools Python Basics',
-          url: 'https://www.w3schools.com/python/',
-          sourceType: 'off-list',
-          estimatedDuration: 20,
+          title: 'Python Official Tutorial - Data Structures',
+          url: 'https://docs.python.org/3/tutorial/introduction.html#data-structures',
+          sourceType: 'preferred',
+          estimatedDuration: 25,
           paid: false,
           verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:12:00.000Z' },
         },
@@ -74,8 +74,8 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Write a script that filters files by extension',
       materials: [
         {
-          title: 'Python Official Docs - Data Structures',
-          url: 'https://docs.python.org/3/tutorial/introduction.html#data-structures',
+          title: 'Python Official Docs - Control Flow',
+          url: 'https://docs.python.org/3/tutorial/controlflow.html',
           sourceType: 'preferred',
           estimatedDuration: 35,
           paid: false,
@@ -84,7 +84,7 @@ export const fixturePlan: PlanData = {
         {
           title: 'Real Python - Python Data Types (deep dive)',
           url: 'https://realpython.com/python-data-types/',
-          sourceType: 'off-list',
+          sourceType: 'preferred',
           estimatedDuration: 25,
           paid: true,
           price: 29,
@@ -147,20 +147,23 @@ export const fixturePlan: PlanData = {
     },
     {
       number: 6,
-      title: 'Project Scaffolding',
-      artifactOneLiner: 'Set up a project directory structure with a runnable entry point',
+      title: 'Catch-up and Spaced Review — Fundamentals',
+      artifactOneLiner:
+        'Catch up on missed fundamentals sessions and re-touch the highest-frequency Python syntax units from sessions 1–5',
       materials: [
         {
-          title: 'Cookiecutter Documentation',
-          url: 'https://cookiecutter.readthedocs.io/en/stable/',
-          sourceType: 'off-list',
+          title: 'Python Official Tutorial (full review)',
+          url: 'https://docs.python.org/3/tutorial/',
+          sourceType: 'preferred',
           estimatedDuration: 30,
           paid: false,
           verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:28:00.000Z' },
         },
       ],
-      selfCheck: 'Can I run the scaffolded project from its entry point?',
-      estimatedTime: 40,
+      selfCheck:
+        'Have I caught up on missed fundamentals work and re-read the most-used syntax sections from sessions 1–5?',
+      estimatedTime: 60,
+      consolidation: true,
     },
     {
       number: 7,
@@ -232,20 +235,23 @@ export const fixturePlan: PlanData = {
     },
     {
       number: 11,
-      title: 'Publishing to PyPI',
-      artifactOneLiner: 'Upload a package to TestPyPI and install it from there',
+      title: 'Catch-up and Spaced Review — Application',
+      artifactOneLiner:
+        'Catch up on missed application sessions and re-touch the highest-frequency units from sessions 1–10',
       materials: [
         {
-          title: 'twine Documentation',
-          url: 'https://twine.readthedocs.io/en/stable/',
-          sourceType: 'off-list',
-          estimatedDuration: 40,
+          title: 'Python Packaging User Guide (full review)',
+          url: 'https://packaging.python.org/en/latest/',
+          sourceType: 'preferred',
+          estimatedDuration: 30,
           paid: false,
-          verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:42:00.000Z' },
+          verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:42:00.000Z' },
         },
       ],
-      selfCheck: 'Can I install my package from TestPyPI in a clean environment?',
+      selfCheck:
+        'Have I caught up on missed application work and re-read the most-used application sections from sessions 1–10?',
       estimatedTime: 60,
+      consolidation: true,
     },
     {
       number: 12,
@@ -253,16 +259,16 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Add subcommands for different CLI actions',
       materials: [
         {
-          title: 'click Documentation',
-          url: 'https://click.palletsprojects.com/en/stable/',
-          sourceType: 'off-list',
+          title: 'argparse subcommands guide',
+          url: 'https://docs.python.org/3/library/argparse.html#sub-commands',
+          sourceType: 'preferred',
           estimatedDuration: 35,
           paid: false,
           verification: { status: 'unresolved-after-retries', checkedAt: null },
         },
         {
-          title: 'argparse subcommands guide',
-          url: 'https://docs.python.org/3/library/argparse.html#sub-commands',
+          title: 'argparse API reference',
+          url: 'https://docs.python.org/3/library/argparse.html',
           sourceType: 'preferred',
           estimatedDuration: 20,
           paid: false,

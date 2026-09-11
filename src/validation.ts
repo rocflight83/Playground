@@ -1,4 +1,5 @@
 import type { PlanData } from './plan-types'
+import { CONSOLIDATION_SLOTS } from './plan-types'
 
 export type ValidationError = string
 
@@ -45,6 +46,16 @@ export function validatePlan(plan: PlanData): ValidationError[] {
     require_(errors, session.title, `session ${session.number} title is required`)
     require_(errors, session.artifactOneLiner, `session ${session.number} artifactOneLiner is required`)
     require_(errors, session.selfCheck, `session ${session.number} selfCheck is required`)
+    if (typeof session.estimatedTime !== 'number' || session.estimatedTime <= 0) {
+      errors.push(`session ${session.number} estimatedTime must be a positive number of minutes`)
+    } else {
+      const dayMinutes = plan.meta.hoursPerDay * 60
+      if (session.estimatedTime > dayMinutes) {
+        errors.push(
+          `session ${session.number} estimatedTime (${session.estimatedTime} min) exceeds hoursPerDay budget (${dayMinutes} min)`
+        )
+      }
+    }
     if (!session.materials || session.materials.length === 0) {
       errors.push(`session ${session.number} must have at least one material`)
     } else {
@@ -68,6 +79,14 @@ export function validatePlan(plan: PlanData): ValidationError[] {
         errors.push(`session ${session.number} paid material must have a positive price`)
       }
       require_(errors, material.verification, `session ${session.number} material verification is required`)
+    }
+    if (session.consolidation && !CONSOLIDATION_SLOTS.has(session.number)) {
+      errors.push(
+        `session ${session.number} is marked consolidation but consolidation slots are reserved for sessions 6 and 11`
+      )
+    }
+    if (CONSOLIDATION_SLOTS.has(session.number) && !session.consolidation) {
+      errors.push(`session ${session.number} must be marked consolidation`)
     }
   }
 

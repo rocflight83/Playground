@@ -9,10 +9,12 @@ structured **plan data** into a single self-contained HTML page and, later,
 verifies links. The generator never emits HTML directly — data and rendering
 are strictly separated.
 
-Current state: the walking skeleton (ticket 01) is in place. The renderer seam
-works end to end for a fixture plan; progress persistence, verification, and
-generate/redo modes are still open tickets (see
-`.scratch/study-plan-generator/`).
+Current state: tickets 01–04 are in place — the renderer seam, progress
+state, validation + verification, and the generate-mode entry point. The
+`generatePlan` function takes a plan produced by the skill's prompt,
+validates and verifies it, and writes plan data plus a rendered page to a
+slug-named directory. Verify-on-demand and per-session redo modes are still
+open tickets (see `.scratch/study-plan-generator/`).
 
 ## Build and test commands
 
@@ -58,8 +60,18 @@ be followed downstream):
   stakes, phases, sessions, materials, verification records, outlier stories).
   This ticket fixes the model for everything downstream.
 - `src/renderer.ts` — Seam 1: `renderPlan(plan): string`.
-- Seam 2 (verification: `plan + injected fetch -> report`) lands in a later
-  ticket; its tests will follow the same conventions.
+- `src/slug.ts` — `slugify(subject): string` for naming each plan's directory.
+- `src/validation.ts` — `validatePlan(plan): string[]`. Every error is
+  reported, not just the first.
+- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now? })`.
+  Returns a new plan with refreshed verification records plus a report.
+  Replaces failed links via `searchReplacement` up to two attempts per
+  slot, then records the slot `unresolved-after-retries`.
+- `src/generate.ts` — `generatePlan(plan, baseDir, { fetch, searchReplacement, now?, fs? })`.
+  Validates, verifies, then writes `plan.json` and `index.html` into
+  `baseDir/<slug>/`. Throws `ValidationFailedError` before touching disk
+  when validation fails. `fs` defaults to Node's `fs/promises`; inject a
+  stub in tests.
 
 ## Security considerations
 

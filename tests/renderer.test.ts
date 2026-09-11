@@ -248,6 +248,23 @@ describe('sessions render as collapsed rows that expand on click', () => {
     const clean = doc.querySelector('.session[data-session="1"] .session-warning')
     expect(clean).toBeNull()
   })
+
+  it('renders sessions 6 and 11 as consolidation slots and no others', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const allSessions = Array.from(doc.querySelectorAll('.session'))
+    const consolidationNumbers: number[] = []
+    for (const el of allSessions) {
+      const isConsolidation = el.getAttribute('data-consolidation') === 'true'
+      const badge = el.querySelector('.session-consolidation')
+      expect(Boolean(badge) === isConsolidation).toBe(true)
+      if (isConsolidation) {
+        const number = Number(el.getAttribute('data-session'))
+        consolidationNumbers.push(number)
+        expect(badge?.textContent).toBeTruthy()
+      }
+    }
+    expect(consolidationNumbers.sort((a, b) => a - b)).toEqual([6, 11])
+  })
 })
 
 describe('progress state persists to localStorage (issue 02)', () => {

@@ -75,4 +75,25 @@ describe('validatePlan', () => {
     expect(errors.some((e) => e.includes('duplicate session number'))).toBe(true)
     expect(errors.length).toBeGreaterThanOrEqual(3)
   })
+
+  it('rejects a session marked consolidation that is not at position 6 or 11', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[2].consolidation = true
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes('consolidation slots are reserved for sessions 6 and 11'))).toBe(true)
+  })
+
+  it('rejects a plan where session 6 or 11 is not marked consolidation', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.sessions[5].consolidation
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes('session 6 must be marked consolidation'))).toBe(true)
+  })
+
+  it('rejects a session whose estimatedTime exceeds the daily budget', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].estimatedTime = plan.meta.hoursPerDay * 60 + 1
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes('exceeds hoursPerDay budget'))).toBe(true)
+  })
 })

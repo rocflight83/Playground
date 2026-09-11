@@ -45,6 +45,7 @@ h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
 .material-duration { color: var(--muted); white-space: nowrap; }
 .material-paid { color: #a15c00; white-space: nowrap; }
 .session-warning { color: #a15c00; font-weight: 600; flex: 1 1 100%; }
+.session-consolidation { display: inline-block; padding: .1rem .5rem; background: var(--band); color: var(--accent); border: 1px solid var(--line); border-radius: 999px; font-size: .8rem; font-weight: 600; }
 .self-check { margin: .6rem 0; padding: .5rem .7rem; background: var(--band); border-radius: 6px; overflow-wrap: break-word; }
 .self-check-label { font-weight: 600; }
 .notes-label { display: block; font-weight: 600; margin-top: .6rem; }
@@ -345,12 +346,18 @@ function renderSession(session: Session): string {
   const warning = hasUnresolved
     ? '<span class="session-warning">⚠ A material for this session could not be verified</span>'
     : ''
+  const consolidation = session.consolidation
+    ? '<span class="session-consolidation">Consolidation</span>'
+    : ''
   return (
-    '<section class="session" data-session="' + num + '">' +
+    '<section class="session" data-session="' + num + '"' +
+    (session.consolidation ? ' data-consolidation="true"' : '') +
+    '>' +
     '<div class="session-summary" role="button" tabindex="0" aria-expanded="false" aria-controls="' + detailId + '">' +
     '<input class="session-check" type="checkbox" data-session="' + num + '" aria-label="Mark session ' + num + ' complete">' +
     '<span class="session-number">' + num + '</span>' +
     '<span class="session-title">' + esc(session.title) + '</span>' +
+    consolidation +
     '<span class="session-artifact">' + esc(session.artifactOneLiner) + '</span>' +
     warning +
     '</div>' +
