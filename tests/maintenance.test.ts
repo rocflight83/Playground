@@ -479,6 +479,13 @@ describe('verify CLI', () => {
     expect(result.stderr + result.stdout).toContain('<planDir>')
   })
 
+  it('exits non-zero with a usage message when extra arguments are supplied', async () => {
+    const result = await runVerifyCli(['first-dir', 'unexpected-extra'], process.cwd())
+    expect(result.status).toBe(2)
+    expect(result.stderr + result.stdout).toContain('Usage:')
+    expect(result.stderr + result.stdout).toContain('<planDir>')
+  })
+
   it('exits non-zero when the supplied directory has no plan.json', async () => {
     const emptyDir = join(baseDir, 'empty')
     await mkdir(emptyDir, { recursive: true })

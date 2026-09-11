@@ -16,8 +16,9 @@ import { ValidationFailedError } from '../src/generate.ts'
 import { reverifyPlanDir } from '../src/maintenance.ts'
 
 async function main(): Promise<void> {
-  const [planDir] = process.argv.slice(2)
-  if (!planDir) {
+  const args = process.argv.slice(2)
+  const [planDir] = args
+  if (args.length !== 1) {
     console.error('Usage: node --experimental-strip-types scripts/verify.ts <planDir>')
     process.exitCode = 2
     return
