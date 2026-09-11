@@ -15,7 +15,7 @@ preserved because the page already stores checkboxes, notes, and stakes in
 
 **User stories covered:** 55, 56. Partially covered, alongside ticket 09: 58.
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Scope and public contract
 
@@ -154,3 +154,25 @@ skipped. Do not commit without an explicit request.
 - Typecheck and the full suite pass.
 
 ## Comments
+
+- 2026-09-11 — `reverifyPlanDir` added in `src/maintenance.ts`; `npm run verify` CLI
+  in `scripts/verify.ts` with summary in generate-mode shape. `FileSystemAdapter`
+  extended with `readFile`; both `nodeFileSystem` and the in-memory test adapters
+  updated together. Tests cover: healthy plan refresh, 404 leaves title/URL in
+  `plan.json` with warning on the page, only verification records change between
+  runs, invalid input rejected before fetch and before write, no `-2` directory
+  is created, end-to-end on the real filesystem updates in place, and CLI usage
+  / no-plan.json failure paths. Skill instructions add a Verify mode section;
+  `AGENTS.md` lists the new module and command.
+- 2026-09-11 — Code review caught a spec gap: `verifyPlan` was deleting
+  outlier stories whose citation failed, so a rotted citation would silently
+  remove a story the learner had been reading. Added
+  `verification?: VerificationRecord` to `OutlierStory` in
+  `src/plan-types.ts`; `verifyPlan` now populates it for every story and
+  accepts `keepOutlierStoriesOnFailure: true` (default false to preserve
+  generate-mode behaviour). `reverifyPlanDir` passes the option; the renderer
+  surfaces a "⚠ Unverified citation" tag in the story when the citation is
+  unresolved. The CLI now also pre-checks that the supplied directory
+  contains `plan.json` and prints a JSON error rather than a raw stack
+  trace. Tests added for the new option, the warning rendering, the CLI
+  pre-check, and the second-write failure surface.

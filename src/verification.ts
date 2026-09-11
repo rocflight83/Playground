@@ -31,6 +31,16 @@ export interface VerifyPlanOptions {
    *  generation-time selection. */
   anchorUrls?: Iterable<string>
   now?: () => string
+  /**
+   * When true, an outlier story whose citation cannot be verified is kept
+   * in the plan with `verification.status = 'unresolved-after-retries'`
+   * instead of being removed. Defaults to false (remove) so generate-mode
+   * callers keep the existing behaviour: a story without a working citation
+   * is dropped, the skill re-sources, the cycle re-runs. Maintenance mode
+   * passes true so a rotted citation does not silently delete a story the
+   * learner has already been reading.
+   */
+  keepOutlierStoriesOnFailure?: boolean
 }
 
 export interface MaterialVerificationOutcome {
@@ -234,6 +244,15 @@ export async function verifyPlan(
         healthy = false
       }
 
+      const now = (opts.now ?? (() => new Date().toISOString()))()
+      const storyWithVerification = {
+        ...story,
+        verification: {
+          status: healthy ? ('verified-by-status' as const) : ('unresolved-after-retries' as const),
+          checkedAt: healthy ? now : null,
+        },
+      }
+
       outcomes.push({
         kind: 'outlier-story',
         phaseIndex,
@@ -241,7 +260,12 @@ export async function verifyPlan(
         status: healthy ? 'verified-by-status' : 'unresolved-after-retries',
       })
 
-      if (healthy) return phase
+      if (healthy) {
+        return { ...phase, outlierStory: storyWithVerification }
+      }
+      if (opts.keepOutlierStoriesOnFailure) {
+        return { ...phase, outlierStory: storyWithVerification }
+      }
       const { outlierStory: _removedStory, ...phaseWithoutStory } = phase
       return phaseWithoutStory
     })

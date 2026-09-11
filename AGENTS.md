@@ -9,26 +9,28 @@ structured **plan data** into a single self-contained HTML page and, later,
 verifies links. The generator never emits HTML directly — data and rendering
 are strictly separated.
 
-Current state: tickets 01–06 are in place — the renderer seam, progress
-state, validation + verification, generate mode, and sourcing depth
-(tiered discovery with off-list admission), and scope honesty (a reframed
-target and its scope note are validated as a pair and rendered together).
-The planning intelligence lives in the `/study-plan` skill at `.claude/skills/study-plan/SKILL.md`; it
-writes plan data and calls `npm run generate`, which validates, verifies
-and renders it into a slug-named directory. Verify-on-demand and
-per-session redo modes are still open tickets (see
+Current state: tickets 01–07 are in place — the renderer seam, progress
+state, validation + verification, generate mode, sourcing depth
+(tiered discovery with off-list admission), scope honesty (a reframed
+target and its scope note are validated as a pair and rendered together),
+and outlier stories (real, citable, removable when uncited). Verify-on-demand
+mode is in place via `src/maintenance.ts` and `npm run verify`; the
+per-session redo mode is still the next open ticket (see
 `.scratch/study-plan-generator/`).
 
 ## Build and test commands
 
 There is no build step. `vitest` transpiles TypeScript on the fly, and
-`scripts/generate.ts` runs under Node's `--experimental-strip-types`. That is
-why relative imports inside `src/` carry an explicit `.ts` extension: Node's
-ESM resolver requires it.
+`scripts/generate.ts` and `scripts/verify.ts` run under Node's
+`--experimental-strip-types`. That is why relative imports inside `src/`
+carry an explicit `.ts` extension: Node's ESM resolver requires it.
 
 - `npm run generate -- <plan.json> [baseDir]` — generate mode: validate, verify
   and render a plan the skill produced (prints a JSON summary; `baseDir`
   defaults to `plans/`)
+- `npm run verify -- <planDir>` — verify mode: re-check every URL in an
+  existing plan directory and rewrite its `plan.json` and `index.html` in
+  place (never allocates a new directory)
 - `npm test` — run the whole suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (run this regularly; it must stay clean)
@@ -72,30 +74,44 @@ be followed downstream):
   plan prose is authored.
 - `src/plan-types.ts` — the plan data model (meta, scope note, DISSS preamble,
   stakes, phases, sessions with their CAFE fields, materials, verification
-  records, outlier stories), plus `CONSOLIDATION_SLOTS` — the single home of
-  the consolidation-slot policy, which error messages and docs derive from
-  rather than restate.
+  records, outlier stories with their own `verification` records), plus
+  `CONSOLIDATION_SLOTS` — the single home of the consolidation-slot policy,
+  which error messages and docs derive from rather than restate.
 - `src/renderer.ts` — Seam 1: `renderPlan(plan): string`.
 - `src/slug.ts` — `slugify(subject): string` for naming each plan's directory.
 - `src/validation.ts` — `validatePlan(plan): string[]`. Every error is
   reported, not just the first. This is the boundary where generated or
   hand-edited JSON becomes trusted data, so its runtime type checks are
   load-bearing rather than redundant with the `PlanData` type.
-- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now? })`.
+- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure? })`.
   Returns a new plan with refreshed verification records plus a report.
   Replaces failed links via `searchReplacement` up to two attempts per
-  slot, then records the slot `unresolved-after-retries`.
+  slot, then records the slot `unresolved-after-retries`. Outlier-story
+  citations are recorded on the story as `verification` records; when
+  `keepOutlierStoriesOnFailure` is set (maintenance mode), a story whose
+  citation fails is kept with `verification.status = 'unresolved-after-retries'`
+  rather than silently removed, so rot is visible on the page.
 - `src/generate.ts` — `generatePlan(plan, baseDir, { fetch, searchReplacement, now?, fs? })`.
   Validates, verifies, then writes `plan.json` and `index.html` into
   `baseDir/<slug>/`, falling back to `<slug>-2`, `-3`, … when that directory
   already exists so regeneration never destroys a learner's progress. Throws
   `ValidationFailedError` before touching disk when validation fails. `fs`
   defaults to Node's `fs/promises`; inject a stub in tests.
+- `src/maintenance.ts` — `reverifyPlanDir(planDir, { fetch, searchReplacement, now?, fs? })`.
+  Reads the existing `plan.json`, validates it, re-runs `verifyPlan`, validates
+  the result, then writes the refreshed `plan.json` and `index.html` into the
+  **same** directory. The directory name is never suffixed, so a learner's
+  browser progress (keyed by session number) survives untouched. Unresolved
+  materials keep their original title and URL with status
+  `unresolved-after-retries`; the renderer surfaces the warning.
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,
   so unresolved slots are reported back to the skill, which re-sources and
   re-runs.
+- `scripts/verify.ts` — the command behind `npm run verify`. Wires the real
+  `fetch` into `reverifyPlanDir` and prints a JSON summary in the same shape
+  as generate mode.
 
 ## Security considerations
 

@@ -1,4 +1,4 @@
-import type { Material, Phase, PlanData, Session } from './plan-types.ts'
+import type { Material, OutlierStory, Phase, PlanData, Session } from './plan-types.ts'
 
 function esc(value: string): string {
   return value
@@ -750,14 +750,20 @@ function renderPhaseBand(phase: Phase, index: number): string {
   )
 }
 
-function renderOutlierStory(story: { person: string; approach: string; principle: string; citation: string }): string {
+function renderOutlierStory(story: OutlierStory): string {
   const safeCitation = esc(story.citation)
+  const isUnverified = story.verification?.status === 'unresolved-after-retries'
+  const warning = isUnverified
+    ? '<span class="tag warning outlier-story-warning">⚠ Unverified citation</span>'
+    : ''
   return (
     '<div class="outlier-story">' +
     '<h3 class="outlier-story-title">Outlier Story: ' + esc(story.person) + '</h3>' +
     '<p class="outlier-story-approach"><strong>Unusual Approach:</strong> ' + esc(story.approach) + '</p>' +
     '<p class="outlier-story-principle"><strong>Transferable Principle:</strong> ' + esc(story.principle) + '</p>' +
-    '<p class="outlier-story-citation"><strong>Citation:</strong> <a href="' + safeCitation + '" target="_blank" rel="noopener">' + safeCitation + '</a></p>' +
+    '<p class="outlier-story-citation"><strong>Citation:</strong> <a href="' + safeCitation + '" target="_blank" rel="noopener">' + safeCitation + '</a>' +
+    warning +
+    '</p>' +
     '</div>'
   )
 }

@@ -13,7 +13,7 @@ class MemoryFileSystem implements FileSystemAdapter {
   createdDirs: Array<string> = []
 
   async exists(path: string): Promise<boolean> {
-    return this.createdDirs.includes(path)
+    return this.createdDirs.includes(path) || this.files.has(path)
   }
 
   async mkdir(path: string): Promise<void> {
@@ -22,6 +22,12 @@ class MemoryFileSystem implements FileSystemAdapter {
 
   async writeFile(path: string, content: string): Promise<void> {
     this.files.set(path, content)
+  }
+
+  async readFile(path: string): Promise<string> {
+    const content = this.files.get(path)
+    if (content === undefined) throw new Error(`No file at ${path}`)
+    return content
   }
 
   read(path: string): string {

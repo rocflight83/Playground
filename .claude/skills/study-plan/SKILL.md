@@ -178,6 +178,49 @@ Read the JSON it prints:
 
 Report the plan directory path and any surviving unresolved slot.
 
+## Verify mode
+
+When a plan has been sitting on disk for weeks, links will have rotted.
+Re-verify mode re-checks every URL against the live web and writes the
+refreshed `plan.json` and `index.html` back into the **same** directory — it
+does not allocate a new directory and does not touch any other plan.
+
+```
+npm run verify -- <planDir>
+```
+
+`<planDir>` is the directory the generator wrote (`baseDir/<subject-slug>/`).
+The command prints a JSON summary identical in shape to generate mode. Read
+it the same way:
+
+- `unresolved` non-empty — each entry is a link that has rotted since the
+  last check. **The slot is preserved in `plan.json`** with its original title
+  and URL and a status of `unresolved-after-retries`; the rendered session
+  carries a visible "⚠ Unverified material" warning. **Do not edit HTML or
+  delete the unresolved entry.** If you judge a replacement is genuinely
+  better than the now-dead one, search for it, swap it into `plan.json`, and
+  re-run `npm run verify` so the new link is checked and the page is
+  re-rendered with the replacement. The same rule applies to outlier-story
+  citations: a rotted citation keeps the story in `plan.json` and the page
+  shows a visible "⚠ Unverified citation" tag next to the link, so rot is
+  announced rather than papered over by silent deletion.
+- `"ok": false` with `validationErrors` — the on-disk `plan.json` is
+  structurally invalid (likely a hand-edit gone wrong). Nothing was written;
+  fix the data and re-run.
+- `"ok": false` with `error` — the directory does not exist or does not
+  contain `plan.json`. Nothing was written; pass a real plan directory
+  (typically `plans/<subject-slug>/`).
+
+Tell the learner that browser checkboxes, notes, and stakes **remain
+intact** — progress lives in `localStorage` under the per-session key, and
+re-verification does not regenerate that storage, only the `plan.json` and
+`index.html` files in the directory. The directory name does not change.
+
+`npm run verify` is the only maintenance step the skill runs. Hand-editing
+`plan.json` and re-rendering with `npm run generate` (writing to a *new*
+directory) is also a supported workflow but produces a fresh directory; use
+`npm run verify` when the goal is to keep the existing one.
+
 ## Preferred sources
 
 Durable, well-known, unlikely to rot inside a two-week sprint:

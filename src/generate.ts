@@ -1,4 +1,4 @@
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { PlanData } from './plan-types.ts'
 import { renderPlan } from './renderer.ts'
@@ -11,6 +11,7 @@ export interface FileSystemAdapter {
   exists(path: string): Promise<boolean>
   mkdir(path: string): Promise<void>
   writeFile(path: string, content: string): Promise<void>
+  readFile(path: string): Promise<string>
 }
 
 const nodeFileSystem: FileSystemAdapter = {
@@ -28,6 +29,7 @@ const nodeFileSystem: FileSystemAdapter = {
   writeFile: async (path, content) => {
     await writeFile(path, content, 'utf8')
   },
+  readFile: async (path) => readFile(path, 'utf8'),
 }
 
 /**

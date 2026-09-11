@@ -247,6 +247,32 @@ describe('the page reads as a study plan', () => {
     expect(citationLink?.getAttribute('href')).toBe(story.citation)
     expect(citationLink?.textContent).toBe(story.citation)
   })
+
+  it('shows a visible warning on the story when the citation verification is unresolved', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.phases[0].outlierStory!.verification = { status: 'unresolved-after-retries', checkedAt: null }
+
+    const doc = structure(renderPlan(plan))
+    const story = doc.querySelector('.outlier-story')
+    expect(story).not.toBeNull()
+    const warning = story?.querySelector('.outlier-story-warning')
+    expect(warning).not.toBeNull()
+    expect(warning?.classList.contains('warning')).toBe(true)
+    expect(warning?.textContent ?? '').toMatch(/unverified|unresolved|citation/i)
+    // The citation link is still rendered so the learner can read what the
+    // page claims and decide whether to re-source it.
+    expect(story?.querySelector('.outlier-story-citation a')?.getAttribute('href')).toBe(plan.phases[0].outlierStory!.citation)
+  })
+
+  it('does not show the warning when the story is healthy or unverified is unset', () => {
+    const healthy = clonePlan(fixturePlan)
+    healthy.phases[0].outlierStory!.verification = { status: 'verified-by-status', checkedAt: '2026-01-01T00:00:00.000Z' }
+    const noVerification = clonePlan(fixturePlan)
+    delete noVerification.phases[0].outlierStory!.verification
+
+    expect(structure(renderPlan(healthy)).querySelector('.outlier-story-warning')).toBeNull()
+    expect(structure(renderPlan(noVerification)).querySelector('.outlier-story-warning')).toBeNull()
+  })
 })
 
 describe('sessions render as collapsed rows that expand on click', () => {

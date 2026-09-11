@@ -35,12 +35,20 @@ export interface Session {
 export interface Phase {
   title: string
   sessions: number[]
-  outlierStory?: {
-    person: string
-    approach: string
-    principle: string
-    citation: string
-  }
+  outlierStory?: OutlierStory
+}
+
+export interface OutlierStory {
+  person: string
+  approach: string
+  principle: string
+  citation: string
+  /**
+   * Set by verification, never the user's to write. Carries the same shape as
+   * a material's verification so a rotted citation can be surfaced in the
+   * page with the same warning affordance.
+   */
+  verification?: VerificationRecord
 }
 
 export interface PlanData {

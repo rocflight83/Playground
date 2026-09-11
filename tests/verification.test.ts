@@ -271,7 +271,10 @@ describe('verifyPlan', () => {
       now: fixedClock,
     })
 
-    expect(result.phases[0].outlierStory).toEqual(plan.phases[0].outlierStory)
+    // The story's text fields are unchanged, but verification is now populated.
+    const story = result.phases[0].outlierStory!
+    expect({ person: story.person, approach: story.approach, principle: story.principle, citation: story.citation }).toEqual(plan.phases[0].outlierStory)
+    expect(story.verification).toEqual({ status: 'verified-by-status', checkedAt: fixedClock() })
     expect(report.outcomes).toContainEqual({
       kind: 'outlier-story',
       phaseIndex: 0,
@@ -317,5 +320,45 @@ describe('verifyPlan', () => {
     })
 
     expect(result.phases[0].outlierStory).toBeUndefined()
+  })
+
+  it('keeps a story whose citation fails when keepOutlierStoriesOnFailure is set, with an unresolved verification record', async () => {
+    const plan = clonePlan(fixturePlan)
+    const citation = plan.phases[0].outlierStory!.citation
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async (url) => (url === citation ? notFound() : ok()),
+      searchReplacement: noReplacement,
+      now: fixedClock,
+      keepOutlierStoriesOnFailure: true,
+    })
+
+    const story = result.phases[0].outlierStory
+    expect(story).toBeDefined()
+    expect(story?.citation).toBe(citation)
+    expect(story?.verification).toEqual({ status: 'unresolved-after-retries', checkedAt: null })
+    expect(report.outcomes).toContainEqual({
+      kind: 'outlier-story',
+      phaseIndex: 0,
+      citation,
+      status: 'unresolved-after-retries',
+    })
+  })
+
+  it('keeps a story whose citation throws when keepOutlierStoriesOnFailure is set', async () => {
+    const plan = clonePlan(fixturePlan)
+    const citation = plan.phases[0].outlierStory!.citation
+    const { plan: result } = await verifyPlan(plan, {
+      fetch: async (url) => {
+        if (url === citation) throw new Error('unreachable')
+        return ok()
+      },
+      searchReplacement: noReplacement,
+      now: fixedClock,
+      keepOutlierStoriesOnFailure: true,
+    })
+
+    const story = result.phases[0].outlierStory
+    expect(story).toBeDefined()
+    expect(story?.verification?.status).toBe('unresolved-after-retries')
   })
 })
