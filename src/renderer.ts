@@ -44,6 +44,7 @@ h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
 .material-link:hover { text-decoration: underline; }
 .material-duration { color: var(--muted); white-space: nowrap; }
 .material-paid { color: #a15c00; white-space: nowrap; }
+.session-warning { color: #a15c00; font-weight: 600; flex: 1 1 100%; }
 .self-check { margin: .6rem 0; padding: .5rem .7rem; background: var(--band); border-radius: 6px; overflow-wrap: break-word; }
 .self-check-label { font-weight: 600; }
 .notes-label { display: block; font-weight: 600; margin-top: .6rem; }
@@ -338,6 +339,12 @@ function renderSession(session: Session): string {
   const materials = session.materials.map(renderMaterial).join('')
   const num = esc(String(session.number))
   const detailId = 'session-detail-' + num
+  const hasUnresolved = session.materials.some(
+    (m) => m.verification.status === 'unresolved-after-retries'
+  )
+  const warning = hasUnresolved
+    ? '<span class="session-warning">⚠ A material for this session could not be verified</span>'
+    : ''
   return (
     '<section class="session" data-session="' + num + '">' +
     '<div class="session-summary" role="button" tabindex="0" aria-expanded="false" aria-controls="' + detailId + '">' +
@@ -345,6 +352,7 @@ function renderSession(session: Session): string {
     '<span class="session-number">' + num + '</span>' +
     '<span class="session-title">' + esc(session.title) + '</span>' +
     '<span class="session-artifact">' + esc(session.artifactOneLiner) + '</span>' +
+    warning +
     '</div>' +
     '<div class="session-detail" id="' + detailId + '" hidden>' +
     '<ul class="materials">' + materials + '</ul>' +

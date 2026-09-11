@@ -224,6 +224,30 @@ describe('sessions render as collapsed rows that expand on click', () => {
     const paid = doc.querySelector('.session[data-session="2"] .material-paid')
     expect(paid?.textContent).toContain('$29')
   })
+
+  it('renders no price affordance when a plan has no paid material', () => {
+    const plan = clonePlan(fixturePlan)
+    for (const session of plan.sessions) {
+      for (const material of session.materials) material.paid = false
+    }
+    const doc = structure(renderPlan(plan))
+    expect(doc.querySelector('.material-paid')).toBeNull()
+  })
+
+  it('renders a visible warning on a session carrying an unresolved material', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    // Fixture session 12 has one material with verification status
+    // 'unresolved-after-retries'.
+    const warned = doc.querySelector('.session[data-session="12"] .session-warning')
+    expect(warned).not.toBeNull()
+    expect(warned?.textContent).toBeTruthy()
+  })
+
+  it('renders no warning on a session with fully verified materials', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const clean = doc.querySelector('.session[data-session="1"] .session-warning')
+    expect(clean).toBeNull()
+  })
 })
 
 describe('progress state persists to localStorage (issue 02)', () => {

@@ -1,0 +1,218 @@
+import type { Material, PlanData, VerificationRecord } from './plan-types'
+
+const MAX_REPLACEMENT_ATTEMPTS = 2
+
+export interface FetchResponse {
+  ok: boolean
+  status: number
+  text(): Promise<string>
+}
+
+export type FetchLike = (url: string) => Promise<FetchResponse>
+
+export interface ReplacementCandidate {
+  title: string
+  url: string
+  sourceType: Material['sourceType']
+}
+
+export type SearchReplacement = (
+  concept: string,
+  excludedUrls: string[]
+) => Promise<ReplacementCandidate | null>
+
+export interface VerifyPlanOptions {
+  fetch: FetchLike
+  searchReplacement: SearchReplacement
+  /** URLs (as they appear in the input plan) of the plan's anchor resources — the
+   *  three-to-five materials the plan leans on most. These are content-verified
+   *  regardless of source tier. Defaults to the highest-estimatedDuration
+   *  materials when omitted; pass this to override with a more informed
+   *  generation-time selection. */
+  anchorUrls?: Iterable<string>
+  now?: () => string
+}
+
+export interface VerificationOutcome {
+  sessionNumber: number
+  materialTitle: string
+  url: string
+  status: VerificationRecord['status']
+  attempts: number
+}
+
+export interface VerificationReport {
+  outcomes: VerificationOutcome[]
+  unresolvedCount: number
+}
+
+function requiresContentCheck(sourceType: Material['sourceType'], isAnchor: boolean): boolean {
+  return sourceType === 'off-list' || isAnchor
+}
+
+function pageCoversConcept(text: string, concept: string): boolean {
+  const words = concept
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((w) => w.length > 3)
+  if (words.length === 0) return true
+  const lower = text.toLowerCase()
+  const matched = words.filter((w) => lower.includes(w))
+  return matched.length / words.length >= 0.5
+}
+
+interface Candidate {
+  title: string
+  url: string
+  sourceType: Material['sourceType']
+}
+
+interface CheckResult {
+  status: VerificationRecord['status'] | 'failed'
+  candidate: Candidate
+}
+
+async function checkCandidate(
+  candidate: Candidate,
+  isAnchor: boolean,
+  attempts: number,
+  concept: string,
+  fetchImpl: FetchLike
+): Promise<CheckResult> {
+  let response: FetchResponse
+  try {
+    response = await fetchImpl(candidate.url)
+  } catch {
+    // An unreachable host is a verification failure, not an exception that
+    // aborts the run.
+    return { status: 'failed', candidate }
+  }
+
+  if (!response.ok) {
+    return { status: 'failed', candidate }
+  }
+
+  if (!requiresContentCheck(candidate.sourceType, isAnchor)) {
+    return { status: attempts === 0 ? 'verified-by-status' : 'replaced-after-failure', candidate }
+  }
+
+  let text: string
+  try {
+    text = await response.text()
+  } catch {
+    return { status: 'failed', candidate }
+  }
+
+  if (!pageCoversConcept(text, concept)) {
+    return { status: 'failed', candidate }
+  }
+
+  return { status: attempts === 0 ? 'verified-by-content' : 'replaced-after-failure', candidate }
+}
+
+async function verifyMaterial(
+  material: Material,
+  isAnchor: boolean,
+  opts: VerifyPlanOptions
+): Promise<{ material: Material; outcome: Omit<VerificationOutcome, 'sessionNumber'> }> {
+  const concept = material.title
+  const triedUrls: string[] = []
+  let candidate: Candidate = { title: material.title, url: material.url, sourceType: material.sourceType }
+  let attempts = 0
+
+  for (;;) {
+    triedUrls.push(candidate.url)
+    const result = await checkCandidate(candidate, isAnchor, attempts, concept, opts.fetch)
+
+    if (result.status !== 'failed') {
+      const now = (opts.now ?? (() => new Date().toISOString()))()
+      return {
+        material: {
+          ...material,
+          title: candidate.title,
+          url: candidate.url,
+          sourceType: candidate.sourceType,
+          verification: { status: result.status, checkedAt: now },
+        },
+        outcome: { materialTitle: candidate.title, url: candidate.url, status: result.status, attempts },
+      }
+    }
+
+    if (attempts >= MAX_REPLACEMENT_ATTEMPTS) break
+
+    const replacement = await opts.searchReplacement(concept, triedUrls)
+    if (!replacement) break
+
+    candidate = replacement
+    attempts += 1
+  }
+
+  return {
+    material: {
+      ...material,
+      verification: { status: 'unresolved-after-retries', checkedAt: null },
+    },
+    outcome: {
+      materialTitle: material.title,
+      url: material.url,
+      status: 'unresolved-after-retries',
+      attempts,
+    },
+  }
+}
+
+const MAX_DEFAULT_ANCHORS = 5
+
+/**
+ * The plan's three-to-five anchor resources default to the materials with the
+ * greatest time investment — the ones a session leans on most heavily — so
+ * that "anchors are content-verified regardless of tier" holds even when the
+ * caller has no more informed selection to supply.
+ */
+function selectDefaultAnchors(plan: PlanData): string[] {
+  const all = plan.sessions.flatMap((session, sessionIndex) =>
+    session.materials.map((material, materialIndex) => ({ material, sessionIndex, materialIndex }))
+  )
+  all.sort((a, b) => {
+    if (b.material.estimatedDuration !== a.material.estimatedDuration) {
+      return b.material.estimatedDuration - a.material.estimatedDuration
+    }
+    if (a.sessionIndex !== b.sessionIndex) return a.sessionIndex - b.sessionIndex
+    return a.materialIndex - b.materialIndex
+  })
+  return all.slice(0, Math.min(MAX_DEFAULT_ANCHORS, all.length)).map((entry) => entry.material.url)
+}
+
+/**
+ * Verify every material in a plan against injected fetch and replacement-search
+ * dependencies. Returns a new plan with refreshed verification records (the
+ * input plan is not mutated) plus a report of every outcome.
+ */
+export async function verifyPlan(
+  plan: PlanData,
+  opts: VerifyPlanOptions
+): Promise<{ plan: PlanData; report: VerificationReport }> {
+  const anchorUrls = new Set(opts.anchorUrls ?? selectDefaultAnchors(plan))
+  const outcomes: VerificationOutcome[] = []
+
+  const sessions = await Promise.all(
+    plan.sessions.map(async (session) => {
+      const materials = await Promise.all(
+        session.materials.map(async (material) => {
+          const isAnchor = anchorUrls.has(material.url)
+          const { material: verified, outcome } = await verifyMaterial(material, isAnchor, opts)
+          outcomes.push({ sessionNumber: session.number, ...outcome })
+          return verified
+        })
+      )
+      return { ...session, materials }
+    })
+  )
+
+  const unresolvedCount = outcomes.filter((o) => o.status === 'unresolved-after-retries').length
+
+  return {
+    plan: { ...plan, sessions },
+    report: { outcomes, unresolvedCount },
+  }
+}
