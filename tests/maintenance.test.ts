@@ -719,6 +719,28 @@ describe('redoSession', () => {
     expect(session1.querySelector('.session-title')?.textContent).toBe('Python Syntax Basics')
   })
 
+  it('restores both original files if the second maintenance write fails', async () => {
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    await seedPlanDir(planDir, plan, fs)
+    const originalPlan = fs.read(join(planDir, 'plan.json'))
+    const originalHtml = fs.read(join(planDir, 'index.html'))
+    fs.failOnWrite = 'index.html'
+
+    await expect(
+      redoSession(planDir, 3, replacementSession3(), {
+        fetch: baseFetch,
+        searchReplacement: noReplacement,
+        now: laterClock,
+        fs,
+      })
+    ).rejects.toThrow('Simulated write failure')
+
+    expect(fs.read(join(planDir, 'plan.json'))).toBe(originalPlan)
+    expect(fs.read(join(planDir, 'index.html'))).toBe(originalHtml)
+  })
+
   it('preserves session-number progress keying: a re-rendered page restores checkbox and notes state for the same session number', async () => {
     const fs = new MemoryFileSystem()
     const planDir = '/plans/python-programming'
@@ -1017,6 +1039,25 @@ describe('redo CLI', () => {
     const htmlAfter = await readFile(generated.htmlPath, 'utf8')
     expect(planAfter).toBe(planBefore)
     expect(htmlAfter).toBe(htmlBefore)
+  })
+
+  it('exits non-zero with JSON validation errors for a non-object replacement', async () => {
+    const baseDir = await mkdtemp(join(tmpdir(), 'study-plan-redo-null-'))
+    try {
+      const replacementPath = join(baseDir, 'replacement.json')
+      await mkdir(join(baseDir, 'plan'))
+      await writeFile(join(baseDir, 'plan', 'plan.json'), '{}', 'utf8')
+      await writeFile(replacementPath, 'null', 'utf8')
+      const result = await runRedoCli([join(baseDir, 'plan'), '3', replacementPath], process.cwd())
+
+      expect(result.status).toBe(1)
+      expect(JSON.parse(result.stdout)).toEqual({
+        ok: false,
+        validationErrors: ['replacement must be a JSON object'],
+      })
+    } finally {
+      await rm(baseDir, { recursive: true, force: true })
+    }
   })
 
   it('exits non-zero with a JSON error when the sessionNumber argument is not an integer 1-14', async () => {

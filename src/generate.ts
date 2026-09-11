@@ -12,6 +12,8 @@ export interface FileSystemAdapter {
   mkdir(path: string): Promise<void>
   writeFile(path: string, content: string): Promise<void>
   readFile(path: string): Promise<string>
+  /** Writes a related file set as one maintenance transaction when supported. */
+  writeFilesAtomically?(files: Array<{ path: string; content: string }>): Promise<void>
 }
 
 const nodeFileSystem: FileSystemAdapter = {

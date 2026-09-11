@@ -1,4 +1,5 @@
-import { access, readFile } from 'node:fs/promises'
+import { access, readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { ValidationFailedError, type FileSystemAdapter } from './generate.ts'
 import type { PlanData, Session } from './plan-types.ts'
@@ -40,6 +41,52 @@ const nodeFileSystem: FileSystemAdapter = {
     await write(path, content, 'utf8')
   },
   readFile: async (path) => readFile(path, 'utf8'),
+  writeFilesAtomically: async (files) => {
+    const temporaryPaths = files.map(({ path }) => `${path}.tmp-${randomUUID()}`)
+    try {
+      await Promise.all(files.map(({ content }, index) => writeFile(temporaryPaths[index], content, 'utf8')))
+      for (let index = 0; index < files.length; index++) {
+        await rename(temporaryPaths[index], files[index].path)
+      }
+    } finally {
+      await Promise.all(temporaryPaths.map((path) => unlink(path).catch(() => undefined)))
+    }
+  },
+}
+
+async function writeMaintenanceFiles(
+  fs: FileSystemAdapter,
+  planPath: string,
+  htmlPath: string,
+  planContent: string,
+  htmlContent: string
+): Promise<void> {
+  // Keep both originals available so a failure in the second write does not
+  // leave plan.json and index.html describing different plans.
+  const originalPlan = await fs.readFile(planPath)
+  const originalHtml = await fs.readFile(htmlPath)
+
+  if (fs.writeFilesAtomically) {
+    await fs.writeFilesAtomically([
+      { path: planPath, content: planContent },
+      { path: htmlPath, content: htmlContent },
+    ])
+    return
+  }
+
+  try {
+    await fs.writeFile(planPath, planContent)
+    await fs.writeFile(htmlPath, htmlContent)
+  } catch (error) {
+    try {
+      await fs.writeFile(planPath, originalPlan)
+      await fs.writeFile(htmlPath, originalHtml)
+    } catch {
+      // Preserve the original write error; adapters should make restoration
+      // possible, and the first error is the one that explains the failure.
+    }
+    throw error
+  }
 }
 
 /**
@@ -75,8 +122,7 @@ export async function reverifyPlanDir(
   const outputErrors = validatePlan(verified)
   if (outputErrors.length > 0) throw new ValidationFailedError(outputErrors)
 
-  await fs.writeFile(planPath, JSON.stringify(verified, null, 2))
-  await fs.writeFile(htmlPath, renderPlan(verified))
+  await writeMaintenanceFiles(fs, planPath, htmlPath, JSON.stringify(verified, null, 2), renderPlan(verified))
 
   return { planDir, planPath, htmlPath, plan: verified, report }
 }
@@ -145,8 +191,7 @@ export async function redoSession(
   const verifiedErrors = validatePlan(verified)
   if (verifiedErrors.length > 0) throw new ValidationFailedError(verifiedErrors)
 
-  await fs.writeFile(planPath, JSON.stringify(verified, null, 2))
-  await fs.writeFile(htmlPath, renderPlan(verified))
+  await writeMaintenanceFiles(fs, planPath, htmlPath, JSON.stringify(verified, null, 2), renderPlan(verified))
 
   return { planDir, planPath, htmlPath, plan: verified, report }
 }

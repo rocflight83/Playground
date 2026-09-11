@@ -89,7 +89,13 @@ async function main(): Promise<void> {
 
   let replacement: Session
   try {
-    replacement = JSON.parse(raw) as Session
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      console.log(JSON.stringify({ ok: false, validationErrors: ['replacement must be a JSON object'] }, null, 2))
+      process.exitCode = 1
+      return
+    }
+    replacement = parsed as Session
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.log(JSON.stringify({ ok: false, error: `${replacementPath} is not valid JSON: ${message}` }, null, 2))
