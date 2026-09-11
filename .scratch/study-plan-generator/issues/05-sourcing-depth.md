@@ -12,10 +12,10 @@
 
 **Status:** ready-for-agent
 
-- [ ] Discovery still prefers the durable tier and reaches off-list only when it genuinely improves the plan
-- [ ] An off-list candidate is fetched and confirmed to cover the claimed concept before admission; a status-only pass never suffices
-- [ ] The plan's three-to-five anchor resources are identified and content-verified regardless of tier
-- [ ] At most one paid resource is selected per plan, with its price recorded
-- [ ] Every session remains completable using free materials alone, so the plan can be started today
-- [ ] A niche subject that produced a thin or warning-laden plan under ticket 04 now produces a full one
-- [ ] A well-served subject's plan does not degrade — durable sources are not displaced by off-list ones without cause
+- [x] Discovery still prefers the durable tier and reaches off-list only when it genuinely improves the plan
+- [x] An off-list candidate is fetched and confirmed to cover the claimed concept before admission; a status-only pass never suffices
+- [x] The plan's three-to-five anchor resources are identified and content-verified regardless of tier
+- [x] At most one paid resource is selected per plan, with its price recorded
+- [x] Every session remains completable using free materials alone, so the plan can be started today
+- [x] A niche subject that produced a thin or warning-laden plan under ticket 04 now produces a full one
+- [x] A well-served subject's plan does not degrade — durable sources are not displaced by off-list ones without cause
