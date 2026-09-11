@@ -28,6 +28,7 @@ describe('verifyPlan', () => {
     }
     await verifyPlan(fixturePlan, { fetch: fetchImpl, searchReplacement: noReplacement, now: fixedClock })
     const expectedUrls = fixturePlan.sessions.flatMap((s) => s.materials.map((m) => m.url))
+    expectedUrls.push(fixturePlan.phases[0].outlierStory!.citation)
     expect(seen.sort()).toEqual(expectedUrls.sort())
   })
 
@@ -148,7 +149,7 @@ describe('verifyPlan', () => {
     const material = result.sessions[0].materials[0]
     expect(material.url).toBe('https://example.com/replacement')
     expect(material.verification.status).toBe('replaced-after-failure')
-    expect(report.outcomes[0].attempts).toBe(1)
+    expect(report.outcomes.find((outcome) => outcome.kind === 'material')?.attempts).toBe(1)
   })
 
   it('caps replacement attempts at two per slot so checking always terminates', async () => {
@@ -174,7 +175,7 @@ describe('verifyPlan', () => {
     expect(searchCalls).toBe(2)
     expect(result.sessions[0].materials[0].verification.status).toBe('unresolved-after-retries')
     expect(result.sessions[0].materials[0].verification.checkedAt).toBeNull()
-    expect(report.outcomes[0].attempts).toBe(2)
+    expect(report.outcomes.find((outcome) => outcome.kind === 'material')?.attempts).toBe(2)
   })
 
   it('records a slot unresolved after retries rather than dropping it', async () => {
@@ -259,5 +260,62 @@ describe('verifyPlan', () => {
     const before = JSON.stringify(plan)
     await verifyPlan(plan, { fetch: async () => ok(), searchReplacement: noReplacement, now: fixedClock })
     expect(JSON.stringify(plan)).toBe(before)
+  })
+
+  it('retains a story with a healthy citation and reports it separately from materials', async () => {
+    const plan = clonePlan(fixturePlan)
+    const citation = plan.phases[0].outlierStory!.citation
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async (url) => (url === citation ? ok() : ok()),
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+
+    expect(result.phases[0].outlierStory).toEqual(plan.phases[0].outlierStory)
+    expect(report.outcomes).toContainEqual({
+      kind: 'outlier-story',
+      phaseIndex: 0,
+      citation,
+      status: 'verified-by-status',
+    })
+    expect(report.outcomes.every((outcome) => outcome.kind === 'material' || outcome.kind === 'outlier-story')).toBe(true)
+  })
+
+  it('removes a story whose citation fails without changing material outcomes', async () => {
+    const plan = clonePlan(fixturePlan)
+    const citation = plan.phases[0].outlierStory!.citation
+    const materialUrls = plan.sessions.flatMap((session) => session.materials.map((material) => material.url))
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async (url) => (url === citation ? notFound() : ok()),
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+
+    expect(result.phases[0].outlierStory).toBeUndefined()
+    expect(report.outcomes.filter((outcome) => outcome.kind === 'material')).toHaveLength(materialUrls.length)
+    expect(report.outcomes).toContainEqual({
+      kind: 'outlier-story',
+      phaseIndex: 0,
+      citation,
+      status: 'unresolved-after-retries',
+    })
+    expect(report.unresolvedCount).toBe(
+      report.outcomes.filter((outcome) => outcome.status === 'unresolved-after-retries').length
+    )
+  })
+
+  it('removes a story when fetching its citation throws', async () => {
+    const plan = clonePlan(fixturePlan)
+    const citation = plan.phases[0].outlierStory!.citation
+    const { plan: result } = await verifyPlan(plan, {
+      fetch: async (url) => {
+        if (url === citation) throw new Error('unreachable')
+        return ok()
+      },
+      searchReplacement: noReplacement,
+      now: fixedClock,
+    })
+
+    expect(result.phases[0].outlierStory).toBeUndefined()
   })
 })

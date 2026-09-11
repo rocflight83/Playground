@@ -15,7 +15,7 @@ replace it with a composite, or render an empty placeholder.
 
 **User stories covered:** 39, 40, 41, 42, 43, 44
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Scope
 
@@ -181,3 +181,11 @@ files and the final test count.
 - Typecheck and the full test suite pass.
 
 ## Comments
+
+### 2026-09-11
+
+- [x] Renderer shows an optional story between each phase band and its sessions, with all fields escaped and visibly labeled.
+- [x] Validation reports missing, non-string, and non-HTTP(S) story fields.
+- [x] Verification checks citations through injected `fetch`, preserves healthy stories, removes failed stories without mutating input, and reports story outcomes with an explicit discriminator.
+- [x] `/study-plan` now documents source preference, field separation, phase placement, verification, and omission when no citable example exists.
+- [x] Typecheck and full test suite pass: 119 tests.

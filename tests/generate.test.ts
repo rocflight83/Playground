@@ -164,6 +164,7 @@ describe('generatePlan', () => {
     })
 
     const expectedUrls = fixturePlan.sessions.flatMap((s) => s.materials.map((m) => m.url))
+    expectedUrls.push(fixturePlan.phases[0].outlierStory!.citation)
     expect(seenUrls.sort()).toEqual(expectedUrls.sort())
     expect(result.report.outcomes.length).toBe(expectedUrls.length)
     const validStatuses = new Set([

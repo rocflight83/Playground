@@ -750,11 +750,26 @@ function renderPhaseBand(phase: Phase, index: number): string {
   )
 }
 
+function renderOutlierStory(story: { person: string; approach: string; principle: string; citation: string }): string {
+  const safeCitation = esc(story.citation)
+  return (
+    '<div class="outlier-story">' +
+    '<h3 class="outlier-story-title">Outlier Story: ' + esc(story.person) + '</h3>' +
+    '<p class="outlier-story-approach"><strong>Unusual Approach:</strong> ' + esc(story.approach) + '</p>' +
+    '<p class="outlier-story-principle"><strong>Transferable Principle:</strong> ' + esc(story.principle) + '</p>' +
+    '<p class="outlier-story-citation"><strong>Citation:</strong> <a href="' + safeCitation + '" target="_blank" rel="noopener">' + safeCitation + '</a></p>' +
+    '</div>'
+  )
+}
+
 export function renderPlan(plan: PlanData): string {
   const rendered = new Set<number>()
   let sessionsHtml = ''
   for (const [index, phase] of plan.phases.entries()) {
     sessionsHtml += renderPhaseBand(phase, index)
+    if (phase.outlierStory) {
+      sessionsHtml += renderOutlierStory(phase.outlierStory)
+    }
     for (const number of phase.sessions) {
       const session = plan.sessions.find((candidate) => candidate.number === number)
       if (!session || rendered.has(number)) continue

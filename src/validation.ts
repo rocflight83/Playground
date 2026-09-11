@@ -177,11 +177,34 @@ export function validatePlan(plan: PlanData): ValidationError[] {
       require_(errors, phase.outlierStory.person, `phase ${i} outlierStory.person is required`)
       require_(errors, phase.outlierStory.approach, `phase ${i} outlierStory.approach is required`)
       require_(errors, phase.outlierStory.principle, `phase ${i} outlierStory.principle is required`)
-      require_(
-        errors,
-        phase.outlierStory.citation,
-        `phase ${i} outlierStory.citation is required (an outlier story without citation is not represented in the data at all)`
-      )
+      require_(errors, phase.outlierStory.citation, `phase ${i} outlierStory.citation is required (an outlier story without citation is not represented in the data at all)`)
+      if (typeof phase.outlierStory.person !== 'string') {
+        errors.push(`phase ${i} outlierStory.person must be a string`)
+      }
+      if (typeof phase.outlierStory.approach !== 'string') {
+        errors.push(`phase ${i} outlierStory.approach must be a string`)
+      }
+      if (typeof phase.outlierStory.principle !== 'string') {
+        errors.push(`phase ${i} outlierStory.principle must be a string`)
+      }
+      if (typeof phase.outlierStory.citation !== 'string') {
+        errors.push(`phase ${i} outlierStory.citation must be a string`)
+      }
+      if (typeof phase.outlierStory.citation === 'string') {
+        const citation = phase.outlierStory.citation.trim()
+        if (!citation) {
+          errors.push(`phase ${i} outlierStory.citation must be a valid http(s) URL`)
+        } else {
+          try {
+            const url = new URL(citation)
+            if (!['http:', 'https:'].includes(url.protocol)) {
+              errors.push(`phase ${i} outlierStory.citation must be a valid http(s) URL`)
+            }
+          } catch {
+            errors.push(`phase ${i} outlierStory.citation must be a valid http(s) URL`)
+          }
+        }
+      }
     }
   }
 
@@ -191,8 +214,6 @@ export function validatePlan(plan: PlanData): ValidationError[] {
     errors.push(`plan must have at most one paid material, found ${paidMaterials.length}`)
   }
 
-  // CAFE repetition: the highest-frequency units must recur across sessions
-  // rather than each session introducing disposable vocabulary.
   const sessionsPerUnit = new Map<string, number>()
   for (const session of sessions) {
     for (const unit of new Set(session.highFrequencyUnits ?? [])) {

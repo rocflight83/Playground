@@ -33,13 +33,25 @@ export interface VerifyPlanOptions {
   now?: () => string
 }
 
-export interface VerificationOutcome {
+export interface MaterialVerificationOutcome {
+  kind: 'material'
   sessionNumber: number
   materialTitle: string
   url: string
   status: VerificationRecord['status']
   attempts: number
 }
+
+export interface OutlierStoryVerificationOutcome {
+  kind: 'outlier-story'
+  phaseIndex: number
+  citation: string
+  status: 'verified-by-status' | 'unresolved-after-retries'
+}
+
+export type VerificationOutcome = MaterialVerificationOutcome | OutlierStoryVerificationOutcome
+
+type MaterialVerificationDetails = Omit<MaterialVerificationOutcome, 'kind' | 'sessionNumber'>
 
 export interface VerificationReport {
   outcomes: VerificationOutcome[]
@@ -114,7 +126,7 @@ async function verifyMaterial(
   material: Material,
   isAnchor: boolean,
   opts: VerifyPlanOptions
-): Promise<{ material: Material; outcome: Omit<VerificationOutcome, 'sessionNumber'> }> {
+): Promise<{ material: Material; outcome: MaterialVerificationDetails }> {
   const concept = material.title
   const triedUrls: string[] = []
   let candidate: Candidate = { title: material.title, url: material.url, sourceType: material.sourceType }
@@ -193,26 +205,52 @@ export async function verifyPlan(
   opts: VerifyPlanOptions
 ): Promise<{ plan: PlanData; report: VerificationReport }> {
   const anchorUrls = new Set(opts.anchorUrls ?? selectDefaultAnchors(plan))
-  const outcomes: VerificationOutcome[] = []
-
-  const sessions = await Promise.all(
+  const sessionResults = await Promise.all(
     plan.sessions.map(async (session) => {
-      const materials = await Promise.all(
+      const results = await Promise.all(
         session.materials.map(async (material) => {
           const isAnchor = anchorUrls.has(material.url)
-          const { material: verified, outcome } = await verifyMaterial(material, isAnchor, opts)
-          outcomes.push({ sessionNumber: session.number, ...outcome })
-          return verified
+          return verifyMaterial(material, isAnchor, opts)
         })
       )
-      return { ...session, materials }
+      return {
+        session: { ...session, materials: results.map((result) => result.material) },
+        outcomes: results.map((result) => ({ kind: 'material' as const, sessionNumber: session.number, ...result.outcome })),
+      }
+    })
+  )
+  const outcomes: VerificationOutcome[] = sessionResults.flatMap((result) => result.outcomes)
+  const sessions = sessionResults.map((result) => result.session)
+
+  const verifiedPhases = await Promise.all(
+    plan.phases.map(async (phase, phaseIndex) => {
+      const story = phase.outlierStory
+      if (!story) return phase
+
+      let healthy = false
+      try {
+        healthy = (await opts.fetch(story.citation)).ok
+      } catch {
+        healthy = false
+      }
+
+      outcomes.push({
+        kind: 'outlier-story',
+        phaseIndex,
+        citation: story.citation,
+        status: healthy ? 'verified-by-status' : 'unresolved-after-retries',
+      })
+
+      if (healthy) return phase
+      const { outlierStory: _removedStory, ...phaseWithoutStory } = phase
+      return phaseWithoutStory
     })
   )
 
   const unresolvedCount = outcomes.filter((o) => o.status === 'unresolved-after-retries').length
 
   return {
-    plan: { ...plan, sessions },
+    plan: { ...plan, phases: verifiedPhases, sessions },
     report: { outcomes, unresolvedCount },
   }
 }

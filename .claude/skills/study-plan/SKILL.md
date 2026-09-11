@@ -138,11 +138,16 @@ standard.
 At most **one paid material in the whole plan**, with its `price` set, and
 every session must remain completable from free materials alone. Both enforced.
 
-Group the sessions into phases. Give a phase an `outlierStory` only when you
-have a real, citable person or case: the unusual approach, the transferable
-principle explaining why it worked, and a working citation URL. **No citation
-means no story** — a phase without one renders without one, and nothing is
-invented to fill the gap.
+Group the sessions into phases. For each phase, look for a real, named person
+or documented case that reached the skill through an unusual route. Prefer a
+subject-specific source; use a general documented case only when no
+subject-specific example is available. Record the unusual approach and the
+transferable principle explaining why it worked as separate fields. Put at
+most one `outlierStory` on a phase, at the phase boundary. Add it only when
+its citation is a working URL that will pass the generator's verification.
+**No such source means omit `outlierStory` entirely** — never invent a story,
+use a composite, or fill the gap with a placeholder. The skill writes plan
+data only; it never writes HTML.
 
 Leave `stakes` as an empty string. It is the learner's to fill in on the page.
 

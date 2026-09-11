@@ -177,6 +177,76 @@ describe('the page reads as a study plan', () => {
     }
     expect(seq).toEqual(expected)
   })
+
+  it('renders an outlier story between its phase band and first session', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const main = doc.querySelector('.page')!
+    const sequence: string[] = []
+    for (const el of Array.from(main.children)) {
+      if (el.classList.contains('phase-band')) {
+        sequence.push(`band:${el.querySelector('.phase-title')?.textContent ?? ''}`)
+      } else if (el.classList.contains('outlier-story')) {
+        sequence.push('story')
+      } else if (el.classList.contains('session')) {
+        sequence.push(`session:${el.getAttribute('data-session')}`)
+      }
+    }
+
+    expect(sequence.slice(0, 3)).toEqual(['band:Fundamentals', 'story', 'session:1'])
+    const story = doc.querySelector('.outlier-story')
+    expect(story).not.toBeNull()
+    if (!story) return
+    const phaseStory = fixturePlan.phases[0].outlierStory!
+    expect(story.textContent).toContain(phaseStory.person)
+    expect(story.textContent).toContain(phaseStory.approach)
+    expect(story.textContent).toContain(phaseStory.principle)
+    const citationLink = story.querySelector('.outlier-story-citation a')
+    expect(citationLink?.getAttribute('href')).toBe(phaseStory.citation)
+    expect(citationLink?.textContent).toBe(phaseStory.citation)
+  })
+
+  it('omits a phase story and its placeholder when outlierStory is absent', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.phases[1].outlierStory
+    const doc = structure(renderPlan(plan))
+
+    expect(doc.querySelectorAll('.outlier-story')).toHaveLength(1)
+    const applicationBand = Array.from(doc.querySelectorAll('.phase-band')).find((band) =>
+      band.textContent?.includes('Application')
+    )
+    expect(applicationBand?.nextElementSibling?.classList.contains('session')).toBe(true)
+    expect(applicationBand?.nextElementSibling?.getAttribute('data-session')).toBe('7')
+    expect(doc.body.textContent).not.toContain('No outlier story')
+  })
+
+  it('escapes every outlier story value, including the citation href and link text', () => {
+    const plan = clonePlan(fixturePlan)
+    const story = plan.phases[0].outlierStory!
+    story.person = '<Ada & friends>'
+    story.approach = 'Used <unusual> methods & persisted'
+    story.principle = 'Make it &lt;safe&gt; & useful'
+    story.citation = 'https://example.com/case?a=1&b=<tag>'
+
+    const html = renderPlan(plan)
+    const escapedCitation = 'https://example.com/case?a=1&amp;b=&lt;tag&gt;'
+    expect(html).toContain('&lt;Ada &amp; friends&gt;')
+    expect(html).toContain('&lt;unusual&gt; methods &amp; persisted')
+    expect(html).toContain('&amp;lt;safe&amp;gt; &amp; useful')
+    expect(html).toContain(escapedCitation)
+    expect(html).not.toMatch(/<Ada\b/i)
+    expect(html).not.toContain('<tag>')
+
+    const doc = structure(html)
+    const renderedStory = doc.querySelector('.outlier-story')
+    expect(renderedStory).not.toBeNull()
+    expect(renderedStory?.querySelector('img')).toBeNull()
+    expect(renderedStory?.textContent).toContain(story.person)
+    expect(renderedStory?.textContent).toContain(story.approach)
+    expect(renderedStory?.textContent).toContain(story.principle)
+    const citationLink = renderedStory?.querySelector('.outlier-story-citation a')
+    expect(citationLink?.getAttribute('href')).toBe(story.citation)
+    expect(citationLink?.textContent).toBe(story.citation)
+  })
 })
 
 describe('sessions render as collapsed rows that expand on click', () => {

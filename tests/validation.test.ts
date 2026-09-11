@@ -60,7 +60,48 @@ describe('validatePlan', () => {
     // @ts-expect-error deliberately malformed for the test
     delete plan.phases[0].outlierStory!.citation
     const errors = validatePlan(plan)
-    expect(errors.some((e) => e.includes('outlierStory.citation is required'))).toBe(true)
+    expect(errors).toContain('phase 0 outlierStory.citation is required (an outlier story without citation is not represented in the data at all)')
+  })
+
+  it('rejects an outlier story with a malformed citation URL', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.phases[0].outlierStory!.citation = 'not-a-url'
+    const errors = validatePlan(plan)
+    expect(errors).toContain('phase 0 outlierStory.citation must be a valid http(s) URL')
+  })
+
+  it('rejects every missing outlier story field', () => {
+    const plan = clonePlan(fixturePlan)
+    const story = plan.phases[0].outlierStory!
+    // @ts-expect-error deliberately malformed for the test
+    delete story.person
+    // @ts-expect-error deliberately malformed for the test
+    delete story.approach
+    // @ts-expect-error deliberately malformed for the test
+    delete story.principle
+    // @ts-expect-error deliberately malformed for the test
+    delete story.citation
+    const errors = validatePlan(plan)
+    expect(errors).toContain('phase 0 outlierStory.person is required')
+    expect(errors).toContain('phase 0 outlierStory.approach is required')
+    expect(errors).toContain('phase 0 outlierStory.principle is required')
+    expect(errors).toContain('phase 0 outlierStory.citation is required (an outlier story without citation is not represented in the data at all)')
+  })
+
+  it('rejects non-string outlier story fields', () => {
+    const plan = clonePlan(fixturePlan)
+    const story = plan.phases[0].outlierStory!
+    // @ts-expect-error deliberately malformed for the test
+    story.person = 42
+    // @ts-expect-error deliberately malformed for the test
+    story.approach = null
+    // @ts-expect-error deliberately malformed for the test
+    story.principle = {}
+    story.citation = 'https://example.com'
+    const errors = validatePlan(plan)
+    expect(errors).toContain('phase 0 outlierStory.person must be a string')
+    expect(errors).toContain('phase 0 outlierStory.approach must be a string')
+    expect(errors).toContain('phase 0 outlierStory.principle must be a string')
   })
 
   it('reports every violation it finds, not just the first', () => {
