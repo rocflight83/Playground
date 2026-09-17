@@ -24,12 +24,15 @@ from the network.
 
 There is no build step; `vitest` transpiles TypeScript directly, and
 `scripts/generate.ts` runs under Node's `--experimental-strip-types`.
+The CLI commands preload `scripts/proxy-preload.mjs`, which makes `fetch`
+honour `HTTP_PROXY`/`HTTPS_PROXY` when they are set (this machine needs it for
+link verification) and does nothing otherwise.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues are tracked as markdown files under `.scratch/<feature>/` in this repo. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues on `rocflight83/Playground` (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

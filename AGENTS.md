@@ -155,6 +155,11 @@ be followed downstream):
   generate mode. The replacement is read from a JSON file (HTML is rejected
   with a JSON error), and the supplied session number must match
   `replacement.number` for the call to make it past argument validation.
+- `scripts/proxy-preload.mjs` — `--import`ed by all three commands above.
+  Node's `fetch` ignores `HTTP_PROXY`/`HTTPS_PROXY`, so on a machine that only
+  reaches the web through a local proxy every link check fails with a DNS or
+  connect error while `curl` succeeds. The preload installs undici's
+  `EnvHttpProxyAgent` when a proxy variable is set and is a no-op otherwise.
 
 ## Security considerations
 

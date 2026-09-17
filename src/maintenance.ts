@@ -1,5 +1,6 @@
 import { access, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { join } from 'node:path'
 import { ValidationFailedError, type FileSystemAdapter } from './generate.ts'
 import type { PlanData, Session } from './plan-types.ts'
@@ -18,6 +19,30 @@ export interface MaintenanceResult {
 
 export interface MaintenanceOptions extends VerifyPlanOptions {
   fs?: FileSystemAdapter
+}
+
+const RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800]
+
+/**
+ * `rename` over an existing file fails with a transient EPERM/EBUSY on Windows
+ * when another process (a sync client such as OneDrive, an antivirus scanner,
+ * a browser with the page open) has the destination open at that instant.
+ * Writing the temporary files is itself what wakes a sync client up, so the
+ * race is reliably lost without a retry. A short backoff is the standard
+ * remedy; any other error, or a lock that outlasts the schedule, propagates.
+ */
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(from, to)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      const transient = code === 'EPERM' || code === 'EBUSY' || code === 'EACCES'
+      if (!transient || attempt >= RENAME_RETRY_DELAYS_MS.length) throw err
+      await sleep(RENAME_RETRY_DELAYS_MS[attempt])
+    }
+  }
 }
 
 /**
@@ -46,7 +71,7 @@ const nodeFileSystem: FileSystemAdapter = {
     try {
       await Promise.all(files.map(({ content }, index) => writeFile(temporaryPaths[index], content, 'utf8')))
       for (let index = 0; index < files.length; index++) {
-        await rename(temporaryPaths[index], files[index].path)
+        await renameWithRetry(temporaryPaths[index], files[index].path)
       }
     } finally {
       await Promise.all(temporaryPaths.map((path) => unlink(path).catch(() => undefined)))
