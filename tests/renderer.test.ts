@@ -477,6 +477,107 @@ describe('sessions render as collapsed rows that expand on click', () => {
   })
 })
 
+describe('consumption time appears on the page when measurement disagrees with the estimate (issue 13)', () => {
+  function withMeasurement(
+    estimatedDuration: number,
+    measuredDuration: number,
+    measuredBy: 'word-count' | 'video-metadata' | 'stated-read-time',
+    sessionNumber = 1
+  ): PlanData {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions.find((s) => s.number === sessionNumber)!]
+    const material = plan.sessions[0].materials[0]
+    material.estimatedDuration = estimatedDuration
+    material.verification = {
+      ...material.verification,
+      measuredDuration,
+      measuredBy,
+    }
+    return plan
+  }
+
+  it('renders a .material-measured note beside the stated duration when a word-count measurement mismatches', () => {
+    const plan = withMeasurement(60, 15, 'word-count')
+    const doc = structure(renderPlan(plan))
+    const note = doc.querySelector('.material-measured')
+    expect(note).not.toBeNull()
+    expect(note?.textContent).toContain('60 min')
+    expect(note?.textContent).toContain('15 min read')
+  })
+
+  it('renders the note as a watch reading when measuredBy is video-metadata', () => {
+    const plan = withMeasurement(10, 45, 'video-metadata')
+    const doc = structure(renderPlan(plan))
+    const note = doc.querySelector('.material-measured')
+    expect(note?.textContent).toContain('10 min')
+    expect(note?.textContent).toContain('45 min watch')
+  })
+
+  it('renders no .material-measured element when the measurement is inside the ratio+gap band', () => {
+    const plan = withMeasurement(20, 15, 'word-count')
+    const doc = structure(renderPlan(plan))
+    expect(doc.querySelector('.material-measured')).toBeNull()
+  })
+
+  it('renders no .material-measured element when the material has no measurement', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    const doc = structure(renderPlan(plan))
+    expect(doc.querySelector('.material-measured')).toBeNull()
+  })
+
+  it('keeps both the stated and measured figures inside the .material-measured node', () => {
+    const plan = withMeasurement(60, 15, 'word-count')
+    const doc = structure(renderPlan(plan))
+    const material = doc.querySelector('.material')
+    const statedDuration = material?.querySelector('.material-duration')?.textContent
+    const measuredNote = material?.querySelector('.material-measured')?.textContent
+    expect(statedDuration).toContain('60 min')
+    expect(measuredNote).toContain('60 min')
+    expect(measuredNote).toContain('15 min read')
+  })
+})
+
+describe('every session shows its materials / artifact time split (issue 13)', () => {
+  it('renders a .session-budget line under each session\'s materials list', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const sessions = Array.from(doc.querySelectorAll('.session'))
+    expect(sessions.length).toBe(14)
+    for (const el of sessions) {
+      const budget = el.querySelector('.session-budget')
+      expect(budget).not.toBeNull()
+    }
+  })
+
+  it('reports the materials total and the artifact remainder for each session', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    for (const session of fixturePlan.sessions) {
+      const el = doc.querySelector(`.session[data-session="${session.number}"]`)!
+      const materialsTotal = session.materials.reduce((sum, m) => sum + m.estimatedDuration, 0)
+      const remainder = session.estimatedTime - materialsTotal
+      const budget = el.querySelector('.session-budget')?.textContent ?? ''
+      expect(budget).toContain(`${materialsTotal} min on materials`)
+      expect(budget).toContain(`${remainder} min on the artifact`)
+    }
+  })
+
+  it('reports "0 min on the artifact" when the materials fill the whole estimatedTime', () => {
+    const plan = clonePlan(fixturePlan)
+    const target = plan.sessions[11]
+    target.materials = [
+      { ...target.materials[0], estimatedDuration: 55 },
+    ]
+    target.estimatedTime = 55
+
+    const el = structure(renderPlan(plan)).querySelector(
+      `.session[data-session="${target.number}"]`
+    )!
+    const budget = el.querySelector('.session-budget')?.textContent ?? ''
+    expect(budget).toContain('55 min on materials')
+    expect(budget).toContain('0 min on the artifact')
+  })
+})
+
 describe('progress state persists to localStorage (issue 02)', () => {
   it('restores a checked session from storage on load', () => {
     const html = renderPlan(fixturePlan)

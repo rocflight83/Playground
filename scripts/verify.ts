@@ -50,7 +50,20 @@ async function main(): Promise<void> {
       searchReplacement: async () => null,
     })
     const unresolved = report.outcomes.filter((o) => o.status === 'unresolved-after-retries')
-    console.log(JSON.stringify({ ok: true, planDir: dir, planPath, htmlPath, unresolved }, null, 2))
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          planDir: dir,
+          planPath,
+          htmlPath,
+          unresolved,
+          durationWarnings: report.durationWarnings,
+        },
+        null,
+        2
+      )
+    )
   } catch (err) {
     if (err instanceof ValidationFailedError) {
       console.log(JSON.stringify({ ok: false, validationErrors: err.errors }, null, 2))

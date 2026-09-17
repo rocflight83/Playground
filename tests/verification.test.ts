@@ -3,6 +3,10 @@ import type { FetchResponse, ReplacementCandidate } from '../src/verification'
 import { verifyPlan } from '../src/verification'
 import { fixturePlan } from './fixtures/plan-fixture'
 
+function prose(words: number): string {
+  return Array.from({ length: words }, () => 'word').join(' ')
+}
+
 function clonePlan(plan: PlanData): PlanData {
   return JSON.parse(JSON.stringify(plan)) as PlanData
 }
@@ -489,5 +493,254 @@ describe('verifyPlan', () => {
     const materialOutcomes = report.outcomes.filter((outcome) => outcome.kind === 'material')
     expect(materialOutcomes.length).toBe(expectedUrls.length)
     expect(materialOutcomes.every((outcome) => outcome.sessionNumber === 3)).toBe(true)
+  })
+})
+
+describe('verifyPlan measures consumption time on every verified material (issue 13)', () => {
+  function singlePreferredNonAnchor(): PlanData {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    plan.sessions[0].materials = [plan.sessions[0].materials[0]]
+    plan.sessions[0].materials[0].sourceType = 'preferred'
+    return plan
+  }
+
+  it('measures a 3000-word body, warns when the estimate is overstated (estimate 60, measured 15)', async () => {
+    const plan = singlePreferredNonAnchor()
+    plan.sessions[0].materials[0].estimatedDuration = 60
+    const body = prose(3000)
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(body),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const material = result.sessions[0].materials[0]
+    expect(material.verification).toEqual({
+      status: 'verified-by-status',
+      checkedAt: fixedClock(),
+      measuredDuration: 15,
+      measuredBy: 'word-count',
+    })
+    expect(report.durationWarnings).toHaveLength(1)
+    expect(report.durationWarnings[0]).toMatchObject({
+      sessionNumber: 1,
+      materialTitle: material.title,
+      estimatedDuration: 60,
+      measuredDuration: 15,
+      measuredBy: 'word-count',
+      words: 3000,
+      direction: 'overstated',
+    })
+  })
+
+  it('records the measurement but warns nothing when the estimate is within the band (estimate 20, measured 15)', async () => {
+    const plan = singlePreferredNonAnchor()
+    plan.sessions[0].materials[0].estimatedDuration = 20
+    const body = prose(3000)
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(body),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const material = result.sessions[0].materials[0]
+    expect(material.verification.measuredDuration).toBe(15)
+    expect(material.verification.measuredBy).toBe('word-count')
+    expect(report.durationWarnings).toEqual([])
+  })
+
+  it('warns when the body dwarfs the estimate (estimate 15, measured 60)', async () => {
+    const plan = singlePreferredNonAnchor()
+    plan.sessions[0].materials[0].estimatedDuration = 15
+    const body = prose(12000)
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(body),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const material = result.sessions[0].materials[0]
+    expect(material.verification.measuredDuration).toBe(60)
+    expect(report.durationWarnings).toHaveLength(1)
+    expect(report.durationWarnings[0]).toMatchObject({
+      estimatedDuration: 15,
+      measuredDuration: 60,
+      direction: 'understated',
+      words: 12000,
+    })
+  })
+
+  it('measures a watch page from <meta itemprop duration> and warns when the estimate is short', async () => {
+    const plan = singlePreferredNonAnchor()
+    plan.sessions[0].materials[0].estimatedDuration = 10
+    const body = `<!doctype html><html><head><meta itemprop="duration" content="PT45M0S"></head><body>watch</body></html>`
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(body),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const material = result.sessions[0].materials[0]
+    expect(material.verification.measuredDuration).toBe(45)
+    expect(material.verification.measuredBy).toBe('video-metadata')
+    expect(report.durationWarnings[0]).toMatchObject({
+      estimatedDuration: 10,
+      measuredDuration: 45,
+      measuredBy: 'video-metadata',
+      direction: 'understated',
+    })
+  })
+
+  it('records nothing and warns nothing for a paid material', async () => {
+    const plan = singlePreferredNonAnchor()
+    const material = plan.sessions[0].materials[0]
+    material.paid = true
+    material.price = 19
+    material.estimatedDuration = 60
+    const body = prose(3000)
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(body),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    expect(result.sessions[0].materials[0].verification.measuredDuration).toBeUndefined()
+    expect(result.sessions[0].materials[0].verification.measuredBy).toBeUndefined()
+    expect(report.durationWarnings).toEqual([])
+  })
+
+  it('records nothing and warns nothing for a .pdf URL', async () => {
+    const plan = singlePreferredNonAnchor()
+    plan.sessions[0].materials[0].url = 'https://example.com/paper.pdf'
+    plan.sessions[0].materials[0].estimatedDuration = 60
+    const body = prose(3000)
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(body),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    expect(result.sessions[0].materials[0].verification.measuredDuration).toBeUndefined()
+    expect(result.sessions[0].materials[0].verification.measuredBy).toBeUndefined()
+    expect(report.durationWarnings).toEqual([])
+  })
+
+  it('records nothing and warns nothing for the placeholder body every existing test already uses', async () => {
+    // Run a small representative plan with placeholder bodies and confirm
+    // durationWarnings is the empty array and no material carries a measurement.
+    const plan = singlePreferredNonAnchor()
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: async () => ok(),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+    expect(result.sessions[0].materials[0].verification.measuredDuration).toBeUndefined()
+    expect(result.sessions[0].materials[0].verification.measuredBy).toBeUndefined()
+    expect(report.durationWarnings).toEqual([])
+  })
+
+  it('keeps status-only verified-by-status when text() rejects and records no measurement', async () => {
+    const plan = singlePreferredNonAnchor()
+    const fetchImpl = async (): Promise<FetchResponse> => ({
+      ok: true,
+      status: 200,
+      text: async () => {
+        throw new Error('body unavailable')
+      },
+    })
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const material = result.sessions[0].materials[0]
+    expect(material.verification.status).toBe('verified-by-status')
+    expect(material.verification.measuredDuration).toBeUndefined()
+    expect(material.verification.measuredBy).toBeUndefined()
+    expect(report.durationWarnings).toEqual([])
+  })
+
+  it('measures a replacement candidate on its own body', async () => {
+    const plan = singlePreferredNonAnchor()
+    plan.sessions[0].materials[0].estimatedDuration = 60
+    const original = plan.sessions[0].materials[0]
+
+    const fetchImpl = async (url: string): Promise<FetchResponse> => {
+      if (url === original.url) return notFound()
+      // Replacement body is 3000 words so a 60-min estimate produces a mismatch.
+      return ok(prose(3000))
+    }
+    const searchReplacement = async (): Promise<ReplacementCandidate> => ({
+      title: 'Replacement Resource',
+      url: 'https://example.com/replacement',
+      sourceType: 'preferred',
+    })
+
+    const { plan: result, report } = await verifyPlan(plan, {
+      fetch: fetchImpl,
+      searchReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const material = result.sessions[0].materials[0]
+    expect(material.url).toBe('https://example.com/replacement')
+    expect(material.verification.status).toBe('replaced-after-failure')
+    expect(material.verification.measuredDuration).toBe(15)
+    expect(material.verification.measuredBy).toBe('word-count')
+    expect(report.durationWarnings).toHaveLength(1)
+    expect(report.durationWarnings[0]).toMatchObject({
+      url: 'https://example.com/replacement',
+      estimatedDuration: 60,
+      measuredDuration: 15,
+      direction: 'overstated',
+    })
+  })
+
+  it('does not change verification status, replacement attempts, or unresolvedCount because of measurement', async () => {
+    // Use a fixture whose body is rich enough to trigger a measurement but
+    // whose estimate is honest, so we can compare to a run on placeholder
+    // bodies: same statuses, same unresolvedCount, same attempt counts.
+    const placeholderPlan = singlePreferredNonAnchor()
+    placeholderPlan.sessions[0].materials[0].estimatedDuration = 20
+    const placeholderResult = await verifyPlan(placeholderPlan, {
+      fetch: async () => ok(),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const measuredPlan = singlePreferredNonAnchor()
+    measuredPlan.sessions[0].materials[0].estimatedDuration = 20
+    const measuredResult = await verifyPlan(measuredPlan, {
+      fetch: async () => ok(prose(3000)),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+
+    const stripTiming = (outcomes: typeof placeholderResult.report.outcomes) =>
+      outcomes.map((outcome) => ({ status: outcome.status, kind: outcome.kind, attempts: 'attempts' in outcome ? outcome.attempts : undefined }))
+    expect(stripTiming(measuredResult.report.outcomes)).toEqual(
+      stripTiming(placeholderResult.report.outcomes)
+    )
+    expect(measuredResult.report.unresolvedCount).toBe(placeholderResult.report.unresolvedCount)
   })
 })

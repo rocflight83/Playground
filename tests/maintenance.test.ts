@@ -817,6 +817,85 @@ describe('redoSession', () => {
     const session4Check = restoredDoc.querySelector('.session-check[data-session="4"]') as HTMLInputElement
     expect(session4Check.checked).toBe(false)
   })
+
+  it('redo mode measures only the replacement session and rides existing measurements through untouched', async () => {
+    // Issue 13: a re-measure is part of redo mode, but only on the targeted
+    // session. Pre-existing measuredDuration / measuredBy on other sessions
+    // must ride through untouched.
+    const fs = new MemoryFileSystem()
+    const planDir = '/plans/python-programming'
+    const plan = clonePlan(fixturePlan)
+    const preExistingMeasurement = {
+      measuredDuration: 7,
+      measuredBy: 'word-count' as const,
+    }
+    for (const session of plan.sessions) {
+      for (const material of session.materials) {
+        material.verification = {
+          ...material.verification,
+          ...preExistingMeasurement,
+        }
+      }
+    }
+    await seedPlanDir(planDir, plan, fs)
+
+    // Session 3's replacement is rich enough to be measured (estimate 60, a
+    // 3000-word body → measured 15). Other sessions' bodies stay short so
+    // their pre-existing measurements ride through unchanged.
+    const replacement = replacementSession3()
+    for (const material of replacement.materials) material.estimatedDuration = 60
+    replacement.estimatedTime = 120
+    const replacementByUrl = new Map(replacement.materials.map((m) => [m.url, m]))
+    const fetchImpl: FetchLike = async (url) => {
+      const material = replacementByUrl.get(url)
+      if (material) {
+        return {
+          ok: true,
+          status: 200,
+          // Echo the title so practitioner/off-list materials pass the content
+          // check, then pad with prose so the word count is rich enough to
+          // produce a measurement.
+          text: async () =>
+            `${material.title} ${Array.from({ length: 3000 }, () => 'word').join(' ')}`,
+        }
+      }
+      return okResponse()
+    }
+
+    const result = await redoSession(planDir, 3, replacement, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      now: laterClock,
+      anchorUrls: [],
+      fs,
+    })
+
+    const written = JSON.parse(fs.read(result.planPath)) as PlanData
+
+    // Session 3's materials now carry fresh measurements (and a new
+    // durationWarnings entry).
+    const session3 = written.sessions.find((s) => s.number === 3)!
+    for (const material of session3.materials) {
+      // The body has the material title plus 3000 prose words; measurement
+      // rounds up to either 15 or 16 minutes depending on how the title
+      // tokens split. Either way it is a word-count measurement, not a
+      // missing one, and the timestamp is the one used by the redo run.
+      expect(material.verification.measuredDuration).toBeGreaterThanOrEqual(15)
+      expect(material.verification.measuredDuration).toBeLessThanOrEqual(16)
+      expect(material.verification.measuredBy).toBe('word-count')
+      expect(material.verification.checkedAt).toBe(laterClock())
+    }
+    expect(result.report.durationWarnings).toHaveLength(2)
+
+    // Every other session's measurement is exactly what we seeded.
+    for (const session of written.sessions) {
+      if (session.number === 3) continue
+      for (const material of session.materials) {
+        expect(material.verification.measuredDuration).toBe(preExistingMeasurement.measuredDuration)
+        expect(material.verification.measuredBy).toBe(preExistingMeasurement.measuredBy)
+      }
+    }
+  })
 })
 
 interface CliResult {

@@ -27,7 +27,13 @@ channel) plus a per-publisher cap (`MAX_URLS_PER_PUBLISHER = 4`,
 distinct URLs after normalization, enforced by `validatePlan`) and a
 sanctioned `practitioner` tier (named practitioner's own talk, video
 lecture or series, blog post, podcast episode, or book — content-verified
-like off-list) that discovery reaches deliberately, every phase.
+like off-list) that discovery reaches deliberately, every phase. Ticket 13
+makes `estimatedDuration` mean what the learner will feel — consumption
+time, measured from the body verification already fetched (video metadata,
+a stated read time, or a `<main>`/`<article>` word count at 200 wpm) —
+with mismatches (>2× **and** >10 min, either direction) collected into
+`report.durationWarnings` and the measured figure shown next to the stated
+one on the page, never as a hard failure.
 
 ## Build and test commands
 
@@ -102,13 +108,25 @@ be followed downstream):
   (`ranaroussi.github.io`, `github.com/vollib`), and returns `null` for video
   hosts whose URL does not identify the channel (YouTube, Vimeo). Also
   exports `isForumHost(url)` for the practitioner-tier forum tripwire.
+- `src/duration.ts` — `measureConsumptionMinutes(url, body): DurationMeasurement | null`,
+  a pure function that maps a fetched body to consumption time in minutes.
+  Three bases in precedence order: `video-metadata` (ISO-8601 duration in
+  `<meta itemprop="duration">`, JSON-LD `"duration":"PT…"`,
+  `<meta property="og:video:duration">`, or player JSON `lengthSeconds`),
+  `stated-read-time` (`N min read` / `N-minute read` / `Reading time: N min`),
+  and `word-count` (the first `<main>`/`<article>`'s words at 200 wpm, with
+  `<script>`, `<style>`, `<noscript>`, `<template>` and `<svg>` blocks
+  stripped; fewer than 100 words returns `null`). Paid materials and PDFs
+  short-circuit to `null` so the shell never makes a second request.
 - `src/validation.ts` — `validatePlan(plan): string[]`. Every error is
   reported, not just the first. This is the boundary where generated or
   hand-edited JSON becomes trusted data, so its runtime type checks are
   load-bearing rather than redundant with the `PlanData` type. Enforces the
   per-publisher cap (`MAX_URLS_PER_PUBLISHER = 4`, one error per offending
-  publisher, sessions listed ascending and deduped) and rejects practitioner
-  tier on known forum hosts.
+  publisher, sessions listed ascending and deduped), rejects practitioner
+  tier on known forum hosts, and type-checks the measurement fields
+  (`measuredDuration` positive number; `measuredBy` one of the three
+  bases; both-or-neither).
 - `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure?, sessionNumbers? })`.
   Returns a new plan with refreshed verification records plus a report.
   Replaces failed links via `searchReplacement` up to two attempts per
@@ -122,7 +140,15 @@ be followed downstream):
   through unchanged, which is what single-session redo relies on. Content
   verification (fetch the body, confirm it covers the claimed concept)
   applies to every non-`preferred` material and to every anchor — i.e.
-  `sourceType !== 'preferred' || isAnchor`.
+  `sourceType !== 'preferred' || isAnchor`. **Measurement**: every material
+  that verifies is measured from the body verification already fetched, the
+  measurement is recorded on the material's verification record
+  (`measuredDuration`, `measuredBy`), and mismatches (`isDurationMismatch`
+  in `plan-types.ts`) are collected into `report.durationWarnings`.
+  Paid materials, PDFs and unmeasurable bodies record nothing and warn
+  nothing; measurement never changes a verification status, never triggers
+  a replacement search, and never throws (a body that cannot be read on a
+  status-only material leaves the material verified and unmeasured).
 - `src/generate.ts` — `generatePlan(plan, baseDir, { fetch, searchReplacement, now?, fs? })`.
   Validates, verifies, then writes `plan.json` and `index.html` into
   `baseDir/<slug>/`, falling back to `<slug>-2`, `-3`, … when that directory

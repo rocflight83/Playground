@@ -1,3 +1,8 @@
+import {
+  DURATION_MISMATCH_MIN_MINUTES,
+  DURATION_MISMATCH_RATIO,
+  isDurationMismatch,
+} from '../src/plan-types'
 import type { PlanData } from '../src/plan-types'
 import { validatePlan } from '../src/validation'
 import { fixturePlan } from './fixtures/plan-fixture'
@@ -454,5 +459,112 @@ describe('validatePlan', () => {
     expect(
       errors.some((e) => e.includes('session 1 materials total') && e.includes('exceeds'))
     ).toBe(true)
+  })
+})
+
+describe('isDurationMismatch (issue 13: consumption time, measured and warned)', () => {
+  it('warns when the estimate is more than 2x and 10 min over the measurement (overstated)', () => {
+    expect(isDurationMismatch(60, 15)).toBe(true)
+  })
+
+  it('warns when the measurement is more than 2x and 10 min over the estimate (understated)', () => {
+    expect(isDurationMismatch(15, 60)).toBe(true)
+  })
+
+  it('does not warn when the ratio is under 2 (20 min estimated, 12 measured)', () => {
+    expect(isDurationMismatch(20, 12)).toBe(false)
+  })
+
+  it('does not warn when the gap is under 10 min (8 estimated, 3 measured)', () => {
+    expect(isDurationMismatch(8, 3)).toBe(false)
+  })
+
+  it('does not warn when the ratio is exactly 2 (30 vs 15)', () => {
+    expect(isDurationMismatch(30, 15)).toBe(false)
+  })
+
+  it('exposes the constants the renderer and verifier both call', () => {
+    expect(DURATION_MISMATCH_RATIO).toBe(2)
+    expect(DURATION_MISMATCH_MIN_MINUTES).toBe(10)
+  })
+})
+
+describe('validatePlan type-checks the measured duration fields (issue 13)', () => {
+  it('accepts a plan whose measurement fields are well-typed', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].verification = {
+      status: 'verified-by-status',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      measuredDuration: 12,
+      measuredBy: 'word-count',
+    }
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('accepts the measurement fields on every verification status', () => {
+    for (const status of [
+      'verified-by-status',
+      'verified-by-content',
+      'replaced-after-failure',
+      'unresolved-after-retries',
+    ] as const) {
+      const plan = clonePlan(fixturePlan)
+      plan.sessions[0].materials[0].verification = {
+        status,
+        checkedAt: status === 'unresolved-after-retries' ? null : '2026-01-01T00:00:00.000Z',
+        measuredDuration: 5,
+        measuredBy: 'stated-read-time',
+      }
+      expect(validatePlan(plan)).toEqual([])
+    }
+  })
+
+  it('rejects measuredDuration that is not a positive number', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].verification = {
+      status: 'verified-by-status',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      measuredDuration: -3,
+    }
+    expect(validatePlan(plan)).toEqual([
+      'session 1 material measuredDuration must be a positive number when present',
+    ])
+  })
+
+  it('rejects measuredBy that is not one of the three bases', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].verification = {
+      status: 'verified-by-status',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      // @ts-expect-error deliberately malformed for the test
+      measuredBy: 'vibes',
+    }
+    expect(validatePlan(plan)).toEqual([
+      "session 1 material measuredBy must be 'video-metadata', 'stated-read-time' or 'word-count' when present",
+    ])
+  })
+
+  it('rejects measuredDuration without measuredBy', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].verification = {
+      status: 'verified-by-status',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      measuredDuration: 5,
+    }
+    expect(validatePlan(plan)).toEqual([
+      'session 1 material measuredDuration and measuredBy must be set together',
+    ])
+  })
+
+  it('rejects measuredBy without measuredDuration', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].verification = {
+      status: 'verified-by-status',
+      checkedAt: '2026-01-01T00:00:00.000Z',
+      measuredBy: 'word-count',
+    }
+    expect(validatePlan(plan)).toEqual([
+      'session 1 material measuredDuration and measuredBy must be set together',
+    ])
   })
 })

@@ -1,4 +1,4 @@
-import type { Material, PlanData } from './plan-types.ts'
+import type { Material, MeasurementBasis, PlanData } from './plan-types.ts'
 import {
   CONSOLIDATION_SLOTS,
   MAX_URLS_PER_PUBLISHER,
@@ -164,6 +164,40 @@ export function validatePlan(plan: PlanData): ValidationError[] {
       if (material.sourceType === 'practitioner' && isForumHost(material.url)) {
         errors.push(
           `session ${session.number} material '${material.title}' is a forum thread and cannot be practitioner-tier; use 'off-list' if it is genuinely the best source`
+        )
+      }
+      // Duration measurement (issue 13): verification writes these when it
+      // can measure consumption time. Hand-edited plans may set them too.
+      // Both-or-neither; the renderer and the report both read them as a
+      // pair, so a partial record would render an orphan. Value errors are
+      // reported first so the pair error only fires on a structurally valid
+      // half-record — that way the message is the right one to act on.
+      const measuredDuration = material.verification.measuredDuration
+      const measuredBy = material.verification.measuredBy
+      const hasDuration = measuredDuration !== undefined
+      const hasBasis = measuredBy !== undefined
+      let durationOk = true
+      let basisOk = true
+      if (hasDuration) {
+        if (typeof measuredDuration !== 'number' || measuredDuration <= 0) {
+          errors.push(
+            `session ${session.number} material measuredDuration must be a positive number when present`
+          )
+          durationOk = false
+        }
+      }
+      if (hasBasis) {
+        const allowed: MeasurementBasis[] = ['video-metadata', 'stated-read-time', 'word-count']
+        if (typeof measuredBy !== 'string' || !allowed.includes(measuredBy as MeasurementBasis)) {
+          errors.push(
+            `session ${session.number} material measuredBy must be 'video-metadata', 'stated-read-time' or 'word-count' when present`
+          )
+          basisOk = false
+        }
+      }
+      if ((hasDuration || hasBasis) && hasDuration !== hasBasis && durationOk && basisOk) {
+        errors.push(
+          `session ${session.number} material measuredDuration and measuredBy must be set together`
         )
       }
     }

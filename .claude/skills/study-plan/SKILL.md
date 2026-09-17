@@ -105,8 +105,28 @@ and a compressed material set sized to the day.
 - **Self-check**: phrased so its answer is unambiguously yes or no. "Can I
   parse two subcommands from one CLI?" — not "Do I understand argparse?"
 - **Materials**: only what the artifact needs. Each carries an honest
-  `estimatedDuration`, and their total must fit inside `estimatedTime`, which
-  must itself fit inside `hoursPerDay × 60`. Both are enforced.
+  `estimatedDuration` — **consumption time** for one read of the page or one
+  watch of the video at the learner's stated level, not the time the learner
+  will spend doing anything with it. The time to *do* the thing belongs to
+  the artifact. Materials' totals must fit inside `estimatedTime`, which must
+  itself fit inside `hoursPerDay × 60`. Both are enforced.
+- **Time budget**: `estimatedTime` is the materials' consumption time plus
+  the artifact time. **Write the artifact time as the remainder**, not as a
+  separate guess: `Σ estimatedDuration` for materials, `estimatedTime − Σ`
+  for the artifact. The rendered page surfaces this split as `N min on
+  materials · M min on the artifact` so the learner sees the artifact budget
+  visibly. **Outside the consolidation slots, the artifact time should be at
+  least half of `estimatedTime`** — a session that is mostly reading is a
+  reading session, not an ultralearning session, so cut or shorten materials
+  rather than pad the estimate. This is a prompt rule, not a validator rule:
+  a consolidation slot is honestly review-heavy and a validator floor would
+  push you to fake the split.
+- **Video**: a video's `estimatedDuration` is its runtime (one watch).
+  Verification fetches the watch page and confirms it names the runtime in
+  `<meta itemprop="duration">`, `<meta property="og:video:duration">`, the
+  player JSON's `lengthSeconds`, or a JSON-LD `VideoObject.duration`. If the
+  watch page disagrees with your estimate by more than a factor of 2 **and**
+  by more than 10 minutes, the shell warns — see step 5.
 - **CAFE**: `highFrequencyUnits` names the units this session drills, drawn
   from the deconstruction. The highest-frequency units recur across the sprint
   — at least one unit appears in three or more sessions, enforced. Add an
@@ -234,6 +254,22 @@ Read the JSON it prints:
   data, and re-run. Two rounds of this is the cap: a slot still unresolved
   after that **stays in the plan**, where the page shows the learner a visible
   warning. Silent deletion is never the answer.
+- `durationWarnings` non-empty — each entry is a material whose measured
+  consumption time is more than 2× **and** more than 10 minutes from your
+  `estimatedDuration` (`direction` says which way it leans). The shell
+  measures from the body verification already fetched, on three bases:
+  `video-metadata` (YouTube/JSON-LD/og:video/player JSON), `stated-read-time`
+  (`N min read` / `N-minute read` / `Reading time: N min`), or `word-count`
+  (`<main>` or `<article>` words at 200 wpm, with `<script>`, `<style>`,
+  `<noscript>`, `<template>` and `<svg>` stripped; fewer than 100 words means
+  unmeasurable). For each warning: if the measurement is right, set
+  `estimatedDuration` to it, rebalance `estimatedTime` so the artifact keeps
+  its budget, and re-run. If the measurement is wrong — a paywall teaser
+  (`words` is small for a long article), a JavaScript-rendered shell, or a
+  page whose embedded video the metadata does not describe — **keep your
+  estimate**; the page then shows the measured figure beside it and the
+  learner can judge. **Never** pad or trim an estimate to silence the
+  warning.
 
 Report the plan directory path and any surviving unresolved slot.
 
@@ -263,6 +299,14 @@ it the same way:
   citations: a rotted citation keeps the story in `plan.json` and the page
   shows a visible "⚠ Unverified citation" tag next to the link, so rot is
   announced rather than papered over by silent deletion.
+- `durationWarnings` non-empty — act on it the same way as in generate mode:
+  if the measurement is right, update `estimatedDuration` in `plan.json`,
+  rebalance `estimatedTime` so the artifact keeps its budget, and re-run
+  `npm run verify` to re-measure and re-render. If the measurement is wrong
+  (a paywall teaser, a JavaScript-rendered shell, an embedded video the
+  metadata does not describe), keep your estimate — the page then shows the
+  measured figure beside it and the learner can judge. Do not pad or trim
+  an estimate to silence the warning.
 - `"ok": false` with `validationErrors` — the on-disk `plan.json` is
   structurally invalid (likely a hand-edit gone wrong). Nothing was written;
   fix the data and re-run.
@@ -329,7 +373,10 @@ it prints:
   plan now contains the new session, and report any `unresolved` entries
   (links that failed verification — they stay on the page with a visible
   "⚠ Unverified material" warning, the same affordance as a rotted link in
-  verify mode).
+  verify mode). Read `durationWarnings` the same way as in generate mode:
+  set `estimatedDuration` to the measurement when it is right and
+  rebalance `estimatedTime` so the artifact keeps its budget; otherwise
+  keep the estimate.
 - `"ok": false` with `validationErrors` — the merged plan (the existing
   twelve untouched sessions plus the replacement) failed validation.
   Fix the listed errors and re-run. Nothing was written.

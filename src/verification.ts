@@ -1,3 +1,5 @@
+import { measureConsumptionMinutes } from './duration.ts'
+import { isDurationMismatch, type MeasurementBasis } from './plan-types.ts'
 import type { Material, PlanData, VerificationRecord } from './plan-types.ts'
 
 const MAX_REPLACEMENT_ATTEMPTS = 2
@@ -72,9 +74,22 @@ export type VerificationOutcome = MaterialVerificationOutcome | OutlierStoryVeri
 
 type MaterialVerificationDetails = Omit<MaterialVerificationOutcome, 'kind' | 'sessionNumber'>
 
+export interface DurationWarning {
+  sessionNumber: number
+  materialTitle: string
+  url: string
+  estimatedDuration: number
+  measuredDuration: number
+  measuredBy: MeasurementBasis
+  /** Word count when `measuredBy === 'word-count'`, so the skill can judge a teaser. */
+  words?: number
+  direction: 'overstated' | 'understated'
+}
+
 export interface VerificationReport {
   outcomes: VerificationOutcome[]
   unresolvedCount: number
+  durationWarnings: DurationWarning[]
 }
 
 function requiresContentCheck(sourceType: Material['sourceType'], isAnchor: boolean): boolean {
@@ -105,6 +120,10 @@ interface Candidate {
 interface CheckResult {
   status: VerificationRecord['status'] | 'failed'
   candidate: Candidate
+  /** Body text when the fetch succeeded and the body could be read. Used for
+   *  measurement; never gates verification (a body that cannot be read still
+   *  produces a verified status, just without measuredDuration / measuredBy). */
+  body?: string
 }
 
 async function checkCandidate(
@@ -128,7 +147,22 @@ async function checkCandidate(
   }
 
   if (!requiresContentCheck(candidate.sourceType, isAnchor)) {
-    return { status: attempts === 0 ? 'verified-by-status' : 'replaced-after-failure', candidate }
+    // Status-only path: try to read the body for measurement. A rejection
+    // here must not fail verification — the page returned 2xx, so the link
+    // is alive; we just cannot measure it.
+    try {
+      const body = await response.text()
+      return {
+        status: attempts === 0 ? 'verified-by-status' : 'replaced-after-failure',
+        candidate,
+        body,
+      }
+    } catch {
+      return {
+        status: attempts === 0 ? 'verified-by-status' : 'replaced-after-failure',
+        candidate,
+      }
+    }
   }
 
   let text: string
@@ -142,14 +176,26 @@ async function checkCandidate(
     return { status: 'failed', candidate }
   }
 
-  return { status: attempts === 0 ? 'verified-by-content' : 'replaced-after-failure', candidate }
+  return {
+    status: attempts === 0 ? 'verified-by-content' : 'replaced-after-failure',
+    candidate,
+    body: text,
+  }
+}
+
+interface MaterialVerificationResult {
+  material: Material
+  outcome: MaterialVerificationDetails
+  /** Present when measurement was made and the gap is large enough to warn. */
+  durationWarning?: DurationWarning
 }
 
 async function verifyMaterial(
   material: Material,
   isAnchor: boolean,
+  sessionNumber: number,
   opts: VerifyPlanOptions
-): Promise<{ material: Material; outcome: MaterialVerificationDetails }> {
+): Promise<MaterialVerificationResult> {
   const concept = material.title
   const triedUrls: string[] = []
   let candidate: Candidate = { title: material.title, url: material.url, sourceType: material.sourceType }
@@ -161,15 +207,43 @@ async function verifyMaterial(
 
     if (result.status !== 'failed') {
       const now = (opts.now ?? (() => new Date().toISOString()))()
+      const verification: VerificationRecord = { status: result.status, checkedAt: now }
+      let durationWarning: DurationWarning | undefined
+
+      // Measurement (issue 13): paid materials, PDFs and unmeasurable bodies
+      // record nothing; a mismatch adds one to the report. Verification never
+      // throws or fails because of measurement.
+      if (!material.paid && result.body !== undefined) {
+        const measurement = measureConsumptionMinutes(candidate.url, result.body)
+        if (measurement !== null) {
+          verification.measuredDuration = measurement.minutes
+          verification.measuredBy = measurement.basis
+          if (isDurationMismatch(material.estimatedDuration, measurement.minutes)) {
+            durationWarning = {
+              sessionNumber,
+              materialTitle: candidate.title,
+              url: candidate.url,
+              estimatedDuration: material.estimatedDuration,
+              measuredDuration: measurement.minutes,
+              measuredBy: measurement.basis,
+              words: measurement.words,
+              direction:
+                measurement.minutes > material.estimatedDuration ? 'understated' : 'overstated',
+            }
+          }
+        }
+      }
+
       return {
         material: {
           ...material,
           title: candidate.title,
           url: candidate.url,
           sourceType: candidate.sourceType,
-          verification: { status: result.status, checkedAt: now },
+          verification,
         },
         outcome: { materialTitle: candidate.title, url: candidate.url, status: result.status, attempts },
+        durationWarning,
       }
     }
 
@@ -238,6 +312,7 @@ export async function verifyPlan(
   const targetNumbers = opts.sessionNumbers
     ? new Set(opts.sessionNumbers)
     : null
+  const durationWarnings: DurationWarning[] = []
   const sessionResults = await Promise.all(
     plan.sessions.map(async (session) => {
       if (targetNumbers && !targetNumbers.has(session.number)) {
@@ -246,7 +321,9 @@ export async function verifyPlan(
       const results = await Promise.all(
         session.materials.map(async (material) => {
           const isAnchor = anchorUrls.has(material.url)
-          return verifyMaterial(material, isAnchor, opts)
+          const result = await verifyMaterial(material, isAnchor, session.number, opts)
+          if (result.durationWarning) durationWarnings.push(result.durationWarning)
+          return result
         })
       )
       return {
@@ -304,6 +381,6 @@ export async function verifyPlan(
 
   return {
     plan: { ...plan, phases: verifiedPhases, sessions },
-    report: { outcomes, unresolvedCount },
+    report: { outcomes, unresolvedCount, durationWarnings },
   }
 }

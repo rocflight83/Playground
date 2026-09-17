@@ -1,4 +1,5 @@
 import type { Material, OutlierStory, Phase, PlanData, Session } from './plan-types.ts'
+import { isDurationMismatch } from './plan-types.ts'
 
 function esc(value: string): string {
   return value
@@ -314,8 +315,11 @@ h1 {
 .material a:hover, .material a:focus-visible { text-decoration-color: currentColor; }
 .material-paid { grid-column: 1 / -1; color: var(--paid); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 .duration { color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
+.material-measured { grid-column: 1 / -1; color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
 .session-units, .session-hook { margin: 16px 0 0; color: var(--ink-soft); font-size: 15px; overflow-wrap: anywhere; }
 .session-units-label, .session-hook-label { color: var(--ink); font-weight: 650; }
+.session-budget { margin: 12px 0 0; color: var(--ink-soft); font-size: 15px; overflow-wrap: anywhere; }
+.session-budget-label { color: var(--ink); font-weight: 650; }
 .self-check {
   margin: 18px 0 0;
   padding: 14px 16px;
@@ -614,6 +618,27 @@ function renderMaterial(material: Material): string {
   const paid = material.paid
     ? '<span class="material-paid">Paid — $' + esc(String(material.price ?? 0)) + '</span>'
     : ''
+  // Measurement (issue 13): a measurement that disagrees with the estimate
+  // is shown next to the stated duration so the learner can weigh it.
+  // The same `isDurationMismatch` the verifier used defines "disagrees", so
+  // the page and the JSON summary cannot drift apart.
+  let measured = ''
+  const { measuredDuration, measuredBy } = material.verification
+  if (
+    measuredDuration !== undefined &&
+    measuredBy !== undefined &&
+    isDurationMismatch(material.estimatedDuration, measuredDuration)
+  ) {
+    const verb = measuredBy === 'video-metadata' ? 'watch' : 'read'
+    measured =
+      '<span class="duration material-measured">' +
+      esc(String(material.estimatedDuration)) +
+      ' min stated · measured ≈' +
+      esc(String(measuredDuration)) +
+      ' min ' +
+      verb +
+      '</span>'
+  }
   return (
     '<li class="material">' +
     '<div class="material-title"><a class="material-link" href="' +
@@ -624,6 +649,7 @@ function renderMaterial(material: Material): string {
     '<span class="duration material-duration">' +
     esc(String(material.estimatedDuration)) +
     ' min</span>' +
+    measured +
     paid +
     '</li>'
   )
@@ -647,6 +673,20 @@ function renderSession(session: Session): string {
         badge: '<span class="tag consolidation session-consolidation">Consolidation</span>',
       }
     : { attribute: '', badge: '' }
+  // Time budget (issue 13): the artifact's time is the session budget minus
+  // the materials' consumption time. Validator already guarantees the
+  // remainder is non-negative, so the second number is always ≥ 0.
+  const materialsTotal = session.materials.reduce(
+    (sum, material) => sum + material.estimatedDuration,
+    0
+  )
+  const remainder = session.estimatedTime - materialsTotal
+  const budget =
+    '<p class="session-budget"><span class="session-budget-label">Budget:</span> ' +
+    esc(String(materialsTotal)) +
+    ' min on materials · ' +
+    esc(String(remainder)) +
+    ' min on the artifact</p>'
   const units =
     '<p class="session-units"><span class="session-units-label">Drills:</span> ' +
     session.highFrequencyUnits.map(esc).join(', ') +
@@ -690,7 +730,9 @@ function renderSession(session: Session): string {
     '<div class="detail-block"><span class="detail-label">Materials</span>' +
     '<ul class="materials">' +
     materials +
-    '</ul></div>' +
+    '</ul>' +
+    budget +
+    '</div>' +
     units +
     hook +
     '<p class="self-check"><span class="self-check-label">Self-check</span>' +

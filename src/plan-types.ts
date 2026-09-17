@@ -8,9 +8,22 @@ export interface Material {
   verification: VerificationRecord
 }
 
+/**
+ * The bases `VerificationRecord.measuredBy` may carry. Verification writes the
+ * field when `measureConsumptionMinutes` returned a result; hand-edited plans
+ * may set it too, but the validator enforces both-or-neither.
+ */
+export type MeasurementBasis = 'video-metadata' | 'stated-read-time' | 'word-count'
+
 export interface VerificationRecord {
   status: 'verified-by-status' | 'verified-by-content' | 'replaced-after-failure' | 'unresolved-after-retries'
   checkedAt: string | null
+  /** Consumption time in minutes, measured from the body verification fetched.
+   *  Set by verification when a measurement is possible; both this and
+   *  `measuredBy` are present together or not at all. */
+  measuredDuration?: number
+  /** Basis of the measurement, set together with `measuredDuration`. */
+  measuredBy?: MeasurementBasis
 }
 
 export interface Session {
@@ -110,3 +123,38 @@ export const MIN_REPEATED_UNIT_SESSIONS = 3
  * and that file needs the same edit.
  */
 export const MAX_URLS_PER_PUBLISHER = 4
+
+/**
+ * Warn when the estimated duration and the measured duration differ by more
+ * than this ratio. Reading speed varies ±50% between learners and between a
+ * skim and a careful read; a 2× band lets every honest estimate through and
+ * still catches the ticket's case (60 stated vs 15 measured is 4×).
+ *
+ * `.claude/skills/study-plan/SKILL.md` states this policy in prose, because a
+ * prompt cannot import a constant. Change either of the policy constants here
+ * and that file needs the same edit.
+ */
+export const DURATION_MISMATCH_RATIO = 2
+
+/**
+ * Warn when the gap between the estimate and the measurement exceeds this
+ * many minutes. Without an absolute floor, a 3-minute page estimated at 8
+ * minutes would warn, and the noise would train the skill to ignore the
+ * list. Ten minutes is the smallest gap that changes a session's artifact
+ * budget in a way the learner would notice.
+ */
+export const DURATION_MISMATCH_MIN_MINUTES = 10
+
+/**
+ * A single implementation of the "far off" test the renderer and the verifier
+ * both call, so the page and the JSON summary cannot disagree. Both directions
+ * warn: an overstated estimate hides artifact time, an understated one blows
+ * the session budget. The check is `max(a, b) / min(a, b) > RATIO && |a − b| > MIN`.
+ */
+export function isDurationMismatch(stated: number, measured: number): boolean {
+  if (stated <= 0 || measured <= 0) return false
+  const lo = Math.min(stated, measured)
+  const hi = Math.max(stated, measured)
+  if (hi / lo <= DURATION_MISMATCH_RATIO) return false
+  return hi - lo > DURATION_MISMATCH_MIN_MINUTES
+}
