@@ -93,6 +93,23 @@ describe('fixture plan exercises every part of the data model', () => {
     const story = fixturePlan.phases.find((p) => p.outlierStory)?.outlierStory
     expect(story?.citation).toBeTruthy()
   })
+
+  it('exercises a deliverable template on a written-artifact session (issue 14)', () => {
+    const session = fixturePlan.sessions.find((s) => s.number === 2)!
+    const template = session.deliverableTemplate
+    expect(template).toBeDefined()
+    expect(template!.fields.length).toBeGreaterThanOrEqual(2)
+    expect(template!.fields.length).toBeLessThanOrEqual(8)
+    expect(template!.fields.some((f) => f.kind === 'paragraph')).toBe(true)
+    expect(template!.fields.some((f) => f.kind === 'line')).toBe(true)
+    const ids = template!.fields.map((f) => f.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const field of template!.fields) {
+      expect(field.id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      expect(field.label).toBeTruthy()
+      expect(field.prompt).toBeTruthy()
+    }
+  })
 })
 
 describe('rendering produces a complete, self-contained document', () => {
@@ -477,6 +494,111 @@ describe('sessions render as collapsed rows that expand on click', () => {
   })
 })
 
+describe('a templated session renders an outline the learner can fill in (issue 14)', () => {
+  const TEMPLATED_NUMBER = 2
+
+  function templateFields() {
+    return fixturePlan.sessions.find((s) => s.number === TEMPLATED_NUMBER)!.deliverableTemplate!
+      .fields
+  }
+
+  it('renders a .deliverable block with the one-liner as its heading', () => {
+    const session = fixturePlan.sessions.find((s) => s.number === TEMPLATED_NUMBER)!
+    const doc = structure(renderPlan(fixturePlan))
+    const block = doc.querySelector(`.session[data-session="${TEMPLATED_NUMBER}"] .deliverable`)
+    expect(block).not.toBeNull()
+    expect(block?.getAttribute('data-session')).toBe(String(TEMPLATED_NUMBER))
+    const heading = block?.querySelector('.deliverable-heading')
+    expect(heading?.textContent).toBe(session.artifactOneLiner)
+  })
+
+  it('renders a labelled input per template field with id, label and placeholder', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const block = doc.querySelector(`.session[data-session="${TEMPLATED_NUMBER}"] .deliverable`)!
+    const inputs = Array.from(block.querySelectorAll('.deliverable-input'))
+    const fields = templateFields()
+    expect(inputs).toHaveLength(fields.length)
+    for (const field of fields) {
+      const expectedId = `deliverable-${TEMPLATED_NUMBER}-${field.id}`
+      const input = doc.getElementById(expectedId) as HTMLElement | null
+      expect(input).not.toBeNull()
+      expect(input?.getAttribute('data-session')).toBe(String(TEMPLATED_NUMBER))
+      expect(input?.getAttribute('data-field')).toBe(field.id)
+      expect(input?.getAttribute('placeholder')).toBe(field.prompt)
+      const label = block.querySelector(`label[for="${expectedId}"]`)
+      expect(label?.textContent).toBe(field.label)
+    }
+  })
+
+  it('renders a textarea for a paragraph field and an input[type="text"] for a line field', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const fields = templateFields()
+    for (const field of fields) {
+      const id = `deliverable-${TEMPLATED_NUMBER}-${field.id}`
+      const input = doc.getElementById(id) as HTMLElement | null
+      expect(input).not.toBeNull()
+      const expectedTag = field.kind === 'paragraph' ? 'TEXTAREA' : 'INPUT'
+      const expectedType = field.kind === 'line' ? 'text' : null
+      expect(input?.tagName).toBe(expectedTag)
+      if (expectedType) expect(input?.getAttribute('type')).toBe(expectedType)
+    }
+  })
+
+  it('renders no .deliverable block on sessions without a template, and keeps their notes-area', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const without = fixturePlan.sessions.find((s) => !s.deliverableTemplate)!
+    const templated = fixturePlan.sessions.find((s) => s.deliverableTemplate)!
+    expect(
+      doc.querySelector(`.session[data-session="${without.number}"] .deliverable`)
+    ).toBeNull()
+    expect(
+      doc.querySelector(`.session[data-session="${without.number}"] .notes-area`)
+    ).not.toBeNull()
+    expect(
+      doc.querySelector(`.session[data-session="${templated.number}"] .deliverable`)
+    ).not.toBeNull()
+    expect(
+      doc.querySelector(`.session[data-session="${templated.number}"] .notes-area`)
+    ).not.toBeNull()
+  })
+
+  it('keeps the same number of .notes-area elements as before (template does not replace notes)', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const notes = doc.querySelectorAll('.notes-area')
+    expect(notes).toHaveLength(fixturePlan.sessions.length)
+  })
+
+  it('renders one .deliverable-download button per templated session', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const download = doc.querySelector(
+      `.session[data-session="${TEMPLATED_NUMBER}"] .deliverable-download`
+    )
+    expect(download).not.toBeNull()
+    expect(download?.getAttribute('data-session')).toBe(String(TEMPLATED_NUMBER))
+    // No download button on untemplated sessions.
+    const without = fixturePlan.sessions.find((s) => !s.deliverableTemplate)!
+    expect(
+      doc.querySelector(`.session[data-session="${without.number}"] .deliverable-download`)
+    ).toBeNull()
+  })
+
+  it('escapes a label and prompt that contain HTML so a hand-edited plan re-renders safely', () => {
+    const plan = clonePlan(fixturePlan)
+    const session = plan.sessions.find((s) => s.number === TEMPLATED_NUMBER)!
+    session.deliverableTemplate!.fields[0].label = 'A <b>bold</b> label & quote'
+    session.deliverableTemplate!.fields[0].prompt = 'Pick <em>one</em> answer & submit.'
+    const html = renderPlan(plan)
+    expect(html).toContain('A &lt;b&gt;bold&lt;/b&gt; label &amp; quote')
+    expect(html).toContain('Pick &lt;em&gt;one&lt;/em&gt; answer &amp; submit.')
+    expect(html).not.toContain('A <b>bold')
+    expect(html).not.toContain('Pick <em>one')
+    const doc = structure(html)
+    const block = doc.querySelector(`.session[data-session="${TEMPLATED_NUMBER}"] .deliverable`)!
+    expect(block.querySelector('b')).toBeNull()
+    expect(block.querySelector('em')).toBeNull()
+  })
+})
+
 describe('consumption time appears on the page when measurement disagrees with the estimate (issue 13)', () => {
   function withMeasurement(
     estimatedDuration: number,
@@ -656,6 +778,190 @@ describe('progress state persists to localStorage (issue 02)', () => {
     const doc = dom.window.document
     const details = Array.from(doc.querySelectorAll('.session-detail')) as HTMLElement[]
     expect(details.every((d) => d.hidden)).toBe(true)
+  })
+})
+
+describe('deliverable-template fields persist in the page progress store (issue 14)', () => {
+  const TEMPLATED_NUMBER = 2
+  const SESSION_KEY = String(TEMPLATED_NUMBER)
+
+  function inputsForSession(doc: Document): HTMLInputElement[] {
+    return Array.from(
+      doc.querySelectorAll(`.session[data-session="${SESSION_KEY}"] .deliverable-input`)
+    ) as HTMLInputElement[]
+  }
+
+  it('seeds rendered field values from the deliverables store on load', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan), {
+      deliverables: { 2: { 'who-pays': 'Market makers short gamma.' } },
+    })
+    const doc = dom.window.document
+    const seeded = doc.getElementById(`deliverable-${SESSION_KEY}-who-pays`) as HTMLInputElement | null
+    expect(seeded?.value).toBe('Market makers short gamma.')
+    const other = doc.getElementById(`deliverable-${SESSION_KEY}-why-persists`) as HTMLInputElement | null
+    expect(other?.value).toBe('')
+  })
+
+  it('writes a typed value to deliverables[session][fieldId] on input', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const doc = dom.window.document
+    const target = doc.getElementById(`deliverable-${SESSION_KEY}-who-pays`) as HTMLInputElement
+    target.value = 'Pension funds'
+    target.dispatchEvent(new dom.window.Event('input'))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress')!)
+    expect(saved.deliverables[SESSION_KEY]['who-pays']).toBe('Pension funds')
+  })
+
+  it('removes the key when a field is cleared, and removes an emptied session object too', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan), {
+      deliverables: { 2: { 'who-pays': 'something' } },
+    })
+    const doc = dom.window.document
+    const target = doc.getElementById(`deliverable-${SESSION_KEY}-who-pays`) as HTMLInputElement
+    expect(target.value).toBe('something')
+    target.value = ''
+    target.dispatchEvent(new dom.window.Event('input'))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress')!)
+    // The whole session is gone, since its only field is now empty.
+    expect(saved.deliverables).toBeUndefined()
+  })
+
+  it('leaves seeded values for ids the template does not have, untouched', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan), {
+      deliverables: { 2: { 'who-pays': 'kept', 'ghost-id': 'orphan' } },
+    })
+    const doc = dom.window.document
+    // Edit another field; the ghost id should still be in storage.
+    const target = doc.getElementById(`deliverable-${SESSION_KEY}-why-persists`) as HTMLInputElement
+    target.value = 'still there'
+    target.dispatchEvent(new dom.window.Event('input'))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress')!)
+    expect(saved.deliverables[SESSION_KEY]['who-pays']).toBe('kept')
+    expect(saved.deliverables[SESSION_KEY]['ghost-id']).toBe('orphan')
+    expect(saved.deliverables[SESSION_KEY]['why-persists']).toBe('still there')
+  })
+
+  it('does not write a deliverables key on load when the store has none', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const saved = JSON.parse(dom.window.localStorage.getItem('studyPlanProgress') ?? 'null')
+    expect(saved).toBeNull()
+  })
+
+  it('renders the Export Progress button so the filled template rides through export/import', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const doc = dom.window.document
+    const exportBtn = Array.from(doc.querySelectorAll('button')).find(
+      (b) => b.textContent === 'Export Progress'
+    )
+    expect(exportBtn).toBeDefined()
+  })
+})
+
+describe('a templated session has a Download deliverable button (issue 14)', () => {
+  const TEMPLATED_NUMBER = 2
+
+  function captureDownload(
+    dom: JSDOM,
+    sessionNumber: number
+  ): { blob: Blob | undefined; filename: string | null; inputValues: Record<string, string> } {
+    const win = dom.window as unknown as {
+      URL: { createObjectURL: (b: Blob) => string; revokeObjectURL: (s: string) => void }
+    }
+    let captured: Blob | undefined
+    let capturedFilename: string | null = null
+    const inputValues: Record<string, string> = {}
+    const originalCreate = win.URL.createObjectURL
+    const originalRevoke = win.URL.revokeObjectURL
+    const blobUrl = 'blob:stub#download'
+    win.URL.createObjectURL = (blob: Blob) => {
+      captured = blob
+      return blobUrl
+    }
+    win.URL.revokeObjectURL = () => {}
+    // Make anchor.click() a no-op so jsdom does not try to follow the link.
+    const origCreateElement = dom.window.document.createElement.bind(dom.window.document)
+    dom.window.document.createElement = function (name: string) {
+      const el = origCreateElement(name)
+      if (name === 'a') {
+        ;(el as HTMLAnchorElement).click = function () {
+          capturedFilename = (el as HTMLAnchorElement).download
+        }
+      }
+      return el
+    } as typeof document.createElement
+    try {
+      const doc = dom.window.document
+      const block = doc.querySelector(
+        `.session[data-session="${sessionNumber}"] .deliverable`
+      ) as HTMLElement
+      const inputs = Array.from(
+        block.querySelectorAll('.deliverable-input')
+      ) as HTMLInputElement[]
+      for (const input of inputs) {
+        const field = input.getAttribute('data-field')!
+        inputValues[field] = input.value
+      }
+      const button = doc.querySelector(
+        `.session[data-session="${sessionNumber}"] .deliverable-download`
+      ) as HTMLButtonElement
+      button.click()
+    } finally {
+      win.URL.createObjectURL = originalCreate
+      win.URL.revokeObjectURL = originalRevoke
+      ;(dom.window.document as unknown as { createElement: typeof document.createElement }).createElement = origCreateElement
+    }
+    return { blob: captured, filename: capturedFilename, inputValues }
+  }
+
+  it('produces a session-NN-deliverable.md whose body is built from the rendered template fields', async () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const session = fixturePlan.sessions.find((s) => s.number === TEMPLATED_NUMBER)!
+    const template = session.deliverableTemplate!
+    const whoPays = dom.window.document.getElementById(
+      `deliverable-${TEMPLATED_NUMBER}-who-pays`
+    ) as HTMLInputElement
+    const headline = dom.window.document.getElementById(
+      `deliverable-${TEMPLATED_NUMBER}-headline`
+    ) as HTMLInputElement
+    whoPays.value = 'Market makers short gamma.'
+    headline.value = 'Premium is rent on volatility insurance.'
+    const capture = captureDownload(dom, TEMPLATED_NUMBER)
+    expect(capture.filename).toBe(`session-0${TEMPLATED_NUMBER}-deliverable.md`)
+    const text = await capture.blob!.text()
+    const expectedHeadings = template.fields.map((field) => `## ${field.label}`)
+    expect(text).toContain(`# ${session.artifactOneLiner}`)
+    expect(text).toContain(`Session ${TEMPLATED_NUMBER}: ${session.title}`)
+    for (const heading of expectedHeadings) {
+      expect(text).toContain(heading)
+    }
+    expect(text).toContain('Market makers short gamma.')
+    expect(text).toContain('Premium is rent on volatility insurance.')
+  })
+
+  it('uses "_(not written)_" for an empty field instead of a blank line', async () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const whoPays = dom.window.document.getElementById(
+      `deliverable-${TEMPLATED_NUMBER}-who-pays`
+    ) as HTMLInputElement
+    whoPays.value = 'written'
+    const capture = captureDownload(dom, TEMPLATED_NUMBER)
+    const text = await capture.blob!.text()
+    expect(text).toContain('written')
+    expect(text).toContain('_(not written)_')
+  })
+
+  it('preserves a value that contains markdown (no sanitisation)', async () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const whoPays = dom.window.document.getElementById(
+      `deliverable-${TEMPLATED_NUMBER}-who-pays`
+    ) as HTMLInputElement
+    const raw = 'A heading.\n\n## Not really a heading\n\n- a list'
+    whoPays.value = raw
+    const capture = captureDownload(dom, TEMPLATED_NUMBER)
+    const text = await capture.blob!.text()
+    expect(text).toContain('A heading.')
+    expect(text).toContain('## Not really a heading')
+    expect(text).toContain('- a list')
   })
 })
 

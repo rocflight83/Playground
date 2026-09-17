@@ -1,4 +1,11 @@
-import type { Material, OutlierStory, Phase, PlanData, Session } from './plan-types.ts'
+import type {
+  DeliverableField,
+  Material,
+  OutlierStory,
+  Phase,
+  PlanData,
+  Session,
+} from './plan-types.ts'
 import { isDurationMismatch } from './plan-types.ts'
 
 function esc(value: string): string {
@@ -345,6 +352,39 @@ h1 {
 }
 .notes-area:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-wash); }
 
+.deliverable { margin-top: 20px; }
+.deliverable-heading { margin: 0 0 10px; color: var(--ink); font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
+.deliverable-field { margin-bottom: 12px; }
+.deliverable-label { display: block; margin-bottom: 6px; color: var(--ink); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.deliverable-input {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--paper-line-strong);
+  outline: none;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.deliverable-input[type="text"], .deliverable-input.line { min-height: 0; height: 38px; padding: 8px 12px; }
+.deliverable-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-wash); }
+.deliverable-download {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--paper-line-strong);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.deliverable-download:hover, .deliverable-download:focus-visible { border-color: var(--accent); color: var(--accent-strong); outline: none; }
+
 .progress-spine {
   position: fixed;
   z-index: 40;
@@ -538,6 +578,36 @@ const SCRIPT = `
     });
   });
 
+  // Deliverable template (issue 14): page-written values live next to notes
+  // and stakes under a 'deliverables' key, keyed by session number then
+  // field id. An empty field removes its key; a session with no filled
+  // fields leaves no empty session object behind.
+  document.querySelectorAll('.deliverable-input').forEach(function (input) {
+    var number = input.getAttribute('data-session');
+    var field = input.getAttribute('data-field');
+    if (!field) return;
+    if (state.deliverables && state.deliverables[number] && state.deliverables[number][field] != null) {
+      input.value = state.deliverables[number][field];
+    }
+    input.addEventListener('input', function () {
+      withState(function (next) {
+        if (input.value) {
+          next.deliverables = next.deliverables || {};
+          next.deliverables[number] = next.deliverables[number] || {};
+          next.deliverables[number][field] = input.value;
+        } else if (next.deliverables && next.deliverables[number]) {
+          delete next.deliverables[number][field];
+          var remaining = false;
+          for (var k in next.deliverables[number]) {
+            if (Object.prototype.hasOwnProperty.call(next.deliverables[number], k)) { remaining = true; break; }
+          }
+          if (!remaining) delete next.deliverables[number];
+          if (!Object.keys(next.deliverables).length) delete next.deliverables;
+        }
+      });
+    });
+  });
+
   var stakes = document.getElementById('stakes');
   if (stakes) {
     if (state.stakes) stakes.value = state.stakes;
@@ -547,6 +617,52 @@ const SCRIPT = `
       });
     });
   }
+
+  // -- Download deliverable (issue 14) -------------------------------------------
+  // The Markdown is built from what the learner sees (the inputs, not storage)
+  // so what they downloaded is what they reviewed. Empty fields become a
+  // visible "_(not written)_" line so a reviewer sees the section is empty
+  // rather than guessing where the prose begins.
+  function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+  document.querySelectorAll('.deliverable-download').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var number = button.getAttribute('data-session');
+      if (!number) return;
+      var block = document.querySelector('.session[data-session="' + number + '"] .deliverable');
+      if (!block) return;
+      var heading = block.querySelector('.deliverable-heading');
+      var headingText = heading ? heading.textContent : '';
+      var sessionTitle = (document.querySelector('.session[data-session="' + number + '"] .session-title') || {}).textContent || '';
+      var fields = Array.prototype.slice.call(block.querySelectorAll('.deliverable-field'));
+      var lines = [];
+      lines.push('# ' + (headingText || ''));
+      lines.push('');
+      lines.push('Session ' + number + ': ' + sessionTitle);
+      lines.push('');
+      for (var i = 0; i < fields.length; i++) {
+        var field = fields[i];
+        var labelEl = field.querySelector('.deliverable-label');
+        var inputEl = field.querySelector('.deliverable-input');
+        var label = labelEl ? (labelEl.textContent || '').trim() : '';
+        var value = inputEl && inputEl.value ? inputEl.value : '_(not written)_';
+        lines.push('## ' + label);
+        lines.push('');
+        lines.push(value);
+        lines.push('');
+      }
+      var body = lines.join('\\n');
+      var blob = new Blob([body], { type: 'text/markdown' });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = 'session-' + pad2(Number(number)) + '-deliverable.md';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+  });
 
   // -- Export / import ----------------------------------------------------------
 
@@ -655,6 +771,67 @@ function renderMaterial(material: Material): string {
   )
 }
 
+function renderDeliverableField(field: DeliverableField, sessionNumber: string): string {
+  const inputId = `deliverable-${sessionNumber}-${field.id}`
+  const inputClass = 'deliverable-input ' + esc(field.kind)
+  const placeholder = esc(field.prompt)
+  const input =
+    field.kind === 'paragraph'
+      ? '<textarea class="' +
+        inputClass +
+        '" id="' +
+        inputId +
+        '" data-session="' +
+        sessionNumber +
+        '" data-field="' +
+        esc(field.id) +
+        '" placeholder="' +
+        placeholder +
+        '"></textarea>'
+      : '<input class="' +
+        inputClass +
+        '" type="text" id="' +
+        inputId +
+        '" data-session="' +
+        sessionNumber +
+        '" data-field="' +
+        esc(field.id) +
+        '" placeholder="' +
+        placeholder +
+        '">'
+  return (
+    '<div class="deliverable-field">' +
+    '<label class="deliverable-label" for="' +
+    inputId +
+    '">' +
+    esc(field.label) +
+    '</label>' +
+    input +
+    '</div>'
+  )
+}
+
+function renderDeliverable(session: Session): string {
+  const template = session.deliverableTemplate
+  if (!template) return ''
+  const sessionNumber = esc(String(session.number))
+  const fields = template.fields.map((field) => renderDeliverableField(field, sessionNumber)).join('')
+  return (
+    '<div class="deliverable" data-session="' +
+    sessionNumber +
+    '">' +
+    '<span class="detail-label">Deliverable</span>' +
+    '<p class="deliverable-heading">' +
+    esc(session.artifactOneLiner) +
+    '</p>' +
+    fields +
+    '<button type="button" class="deliverable-download" data-session="' +
+    sessionNumber +
+    '">Download deliverable</button>' +
+    '</div>'
+  )
+}
+
 function renderSession(session: Session): string {
   const materials = session.materials.map(renderMaterial).join('')
   const sessionNo = esc(String(session.number))
@@ -738,6 +915,7 @@ function renderSession(session: Session): string {
     '<p class="self-check"><span class="self-check-label">Self-check</span>' +
     esc(session.selfCheck) +
     '</p>' +
+    renderDeliverable(session) +
     '<label class="notes-label" for="notes-' +
     sessionNo +
     '">Notes' +

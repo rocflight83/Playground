@@ -33,7 +33,12 @@ time, measured from the body verification already fetched (video metadata,
 a stated read time, or a `<main>`/`<article>` word count at 200 wpm) —
 with mismatches (>2× **and** >10 min, either direction) collected into
 `report.durationWarnings` and the measured figure shown next to the stated
-one on the page, never as a hard failure.
+one on the page, never as a hard failure. Ticket 14 adds an optional
+`Session.deliverableTemplate` (a list of 2–8 `{id, label, prompt, kind}`
+fields) for sessions whose artifact is written rather than built: the
+page renders a form per templated session, answers persist in the existing
+`studyPlanProgress` store under `deliverables[session][field]`, and a
+"Download deliverable" button per template writes a Markdown file.
 
 ## Build and test commands
 
@@ -96,10 +101,14 @@ be followed downstream):
   plan prose is authored.
 - `src/plan-types.ts` — the plan data model (meta, scope note, DISSS preamble,
   stakes, phases, sessions with their CAFE fields, materials, verification
-  records, outlier stories with their own `verification` records), plus
-  `CONSOLIDATION_SLOTS` — the single home of the consolidation-slot policy,
-  which error messages and docs derive from rather than restate.
-- `src/renderer.ts` — Seam 1: `renderPlan(plan): string`.
+  records, outlier stories with their own `verification` records, and the
+  optional `deliverableTemplate`), plus `CONSOLIDATION_SLOTS` — the single
+  home of the consolidation-slot policy, which error messages and docs derive
+  from rather than restate.
+- `src/renderer.ts` — Seam 1: `renderPlan(plan): string`. A templated
+  session's detail renders a fillable form with a per-template "Download
+  deliverable" button; learner answers live in the page's progress store
+  under `deliverables[session][field]`, never in `PlanData`.
 - `src/slug.ts` — `slugify(subject): string` for naming each plan's directory.
 - `src/publisher.ts` — `publisherKey(url): string | null`, a pure function
   that maps a material URL to the publisher the per-publisher cap counts.

@@ -87,6 +87,40 @@ export const fixturePlan: PlanData = {
       selfCheck: 'Can I use if/else and loops to filter files by extension?',
       estimatedTime: 60,
       highFrequencyUnits: ['control flow', 'data structures', 'syntax fundamentals'],
+      deliverableTemplate: {
+        fields: [
+          {
+            id: 'who-pays',
+            label: 'Who pays the premium',
+            prompt: 'Which party is structurally short this premium, and why do they accept the price?',
+            kind: 'paragraph',
+          },
+          {
+            id: 'why-persists',
+            label: 'Why the premium persists',
+            prompt: 'What structural feature keeps this party paying across cycles?',
+            kind: 'paragraph',
+          },
+          {
+            id: 'regime-on',
+            label: 'Regime harvested',
+            prompt: 'Under what observable conditions is the edge harvested, and what tells you it is on?',
+            kind: 'paragraph',
+          },
+          {
+            id: 'regime-off',
+            label: 'Regime that blows up',
+            prompt: 'Under what observable conditions does the trade fail, and what is the first warning?',
+            kind: 'paragraph',
+          },
+          {
+            id: 'headline',
+            label: 'Headline',
+            prompt: 'One sentence stating the alpha in a form you could put on a slide.',
+            kind: 'line',
+          },
+        ],
+      },
     },
     {
       number: 3,

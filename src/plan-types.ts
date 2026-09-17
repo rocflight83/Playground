@@ -26,6 +26,30 @@ export interface VerificationRecord {
   measuredBy?: MeasurementBasis
 }
 
+export interface DeliverableField {
+  /**
+   * Stable join key for the learner's saved answer: the page stores the
+   * value under `<session number>/<id>`, and the app's store will do the
+   * same. A slug (`^[a-z0-9]+(-[a-z0-9]+)*$`), unique within the session.
+   * Changing an id orphans the saved answer, so the skill keeps ids
+   * meaningful (`alpha-source`, not `field-1`).
+   */
+  id: string
+  /** Noun phrase the learner sees as the field's heading, e.g. "Who pays the premium". */
+  label: string
+  /**
+   * The question the field answers, shown as guidance inside the empty
+   * field. Written so a one-paragraph answer is complete.
+   */
+  prompt: string
+  /** `line` renders a single-line input (a title, a verdict, a number); `paragraph` renders a textarea. */
+  kind: 'line' | 'paragraph'
+}
+
+export interface DeliverableTemplate {
+  fields: DeliverableField[]
+}
+
 export interface Session {
   number: number
   title: string
@@ -43,6 +67,13 @@ export interface Session {
   encodingHook?: string
   /** True for the sessions in `CONSOLIDATION_SLOTS`, which are catch-up / spaced-review slots. */
   consolidation?: boolean
+  /**
+   * Optional deliverable template: an outline the learner fills in on the
+   * page rather than a binary self-check over a built artifact. Present
+   * only when the artifact is written; omit for built artifacts so the
+   * session renders exactly as before.
+   */
+  deliverableTemplate?: DeliverableTemplate
 }
 
 export interface Phase {
@@ -99,6 +130,28 @@ export interface PlanData {
  * and that file needs the same edit.
  */
 export const CONSOLIDATION_SLOTS: ReadonlySet<number> = new Set([6, 11])
+
+/**
+ * Minimum number of fields a deliverable template may carry. One field is a
+ * notes box, which the session already has; the lower bound makes the
+ * template an outline rather than a single answer.
+ *
+ * `.claude/skills/study-plan/SKILL.md` states this policy in prose, because a
+ * prompt cannot import a constant. Change either of the policy constants here
+ * and that file needs the same edit.
+ */
+export const MIN_DELIVERABLE_FIELDS = 2
+
+/**
+ * Maximum number of fields a deliverable template may carry. More than eight
+ * is an essay outline, and the skill should split the artifact or drop the
+ * template.
+ *
+ * `.claude/skills/study-plan/SKILL.md` states this policy in prose, because a
+ * prompt cannot import a constant. Change either of the policy constants here
+ * and that file needs the same edit.
+ */
+export const MAX_DELIVERABLE_FIELDS = 8
 
 /** The consolidation slots as prose, so error messages and docs cannot drift from the policy. */
 export function consolidationSlotsDescription(): string {

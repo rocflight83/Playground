@@ -457,6 +457,151 @@ describe('validatePlan', () => {
   })
 })
 
+describe('validatePlan type-checks a session deliverableTemplate (issue 14)', () => {
+  function makeTemplateField(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'who-pays',
+      label: 'Who pays the premium',
+      prompt: 'Which party is structurally short this premium?',
+      kind: 'paragraph' as const,
+      ...overrides,
+    }
+  }
+
+  function attachTemplate(plan: PlanData, fields: unknown[]): PlanData {
+    plan.sessions[1].deliverableTemplate = { fields: fields as never }
+    return plan
+  }
+
+  it('accepts a plan whose session carries a well-formed template', () => {
+    const plan = attachTemplate(clonePlan(fixturePlan), [
+      makeTemplateField({ id: 'who-pays', label: 'Who pays', prompt: 'Why this party?' }),
+      makeTemplateField({ id: 'why-persists', label: 'Why it persists', prompt: 'Why does it keep paying?' }),
+      makeTemplateField({ id: 'regime-on', label: 'Regime on', prompt: 'When is the edge harvested?' }),
+      makeTemplateField({ id: 'regime-off', label: 'Regime off', prompt: 'When does it blow up?' }),
+    ])
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('accepts a plan where no session carries a template', () => {
+    expect(validatePlan(fixturePlan)).toEqual([])
+  })
+
+  it('rejects a template whose fields array is not an array', () => {
+    const plan = attachTemplate(clonePlan(fixturePlan), 'not-an-array' as never)
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'session 2 deliverableTemplate.fields must be an array of 2 to 8 fields'
+    )
+  })
+
+  it('rejects a template with fewer than 2 fields', () => {
+    const plan = attachTemplate(clonePlan(fixturePlan), [makeTemplateField()])
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'session 2 deliverableTemplate.fields must be an array of 2 to 8 fields'
+    )
+  })
+
+  it('rejects a template with more than 8 fields', () => {
+    const fields = Array.from({ length: 9 }, (_, i) =>
+      makeTemplateField({ id: `field-${i}`, label: `field ${i}`, prompt: `prompt ${i}` })
+    )
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      'session 2 deliverableTemplate.fields must be an array of 2 to 8 fields'
+    )
+  })
+
+  it('rejects a field whose id is missing', () => {
+    const fields = [
+      makeTemplateField({ id: 'a' }),
+      makeTemplateField({ id: undefined }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field 1 id must be a slug')
+  })
+
+  it('rejects a field whose id has uppercase characters', () => {
+    const fields = [
+      makeTemplateField({ id: 'a' }),
+      makeTemplateField({ id: 'Who-Pays' }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field 1 id must be a slug')
+  })
+
+  it('rejects a field whose id has a leading hyphen', () => {
+    const fields = [
+      makeTemplateField({ id: 'a' }),
+      makeTemplateField({ id: '-who-pays' }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field 1 id must be a slug')
+  })
+
+  it('rejects duplicate field ids within one session', () => {
+    const fields = [
+      makeTemplateField({ id: 'who-pays' }),
+      makeTemplateField({ id: 'who-pays' }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field ids must be unique')
+  })
+
+  it('rejects a field with a missing label', () => {
+    const fields = [
+      makeTemplateField(),
+      makeTemplateField({ id: 'second', label: '' }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field 1 label is required')
+  })
+
+  it('rejects a field with a missing prompt', () => {
+    const fields = [
+      makeTemplateField(),
+      makeTemplateField({ id: 'second', prompt: undefined }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field 1 prompt is required')
+  })
+
+  it('rejects a field whose kind is not line or paragraph', () => {
+    const fields = [
+      makeTemplateField(),
+      makeTemplateField({ id: 'second', kind: 'list' }),
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain(
+      "session 2 deliverableTemplate field 1 kind must be 'line' or 'paragraph'"
+    )
+  })
+
+  it('reports every error on a malformed template, not just the first', () => {
+    const fields = [
+      { id: 'who-pays', label: '', prompt: '', kind: 'list' },
+      { id: 'who-pays', label: 'a', prompt: 'b', kind: 'paragraph' },
+    ]
+    const plan = attachTemplate(clonePlan(fixturePlan), fields)
+    const errors = validatePlan(plan)
+    expect(errors).toContain('session 2 deliverableTemplate field 0 label is required')
+    expect(errors).toContain('session 2 deliverableTemplate field 0 prompt is required')
+    expect(errors).toContain(
+      "session 2 deliverableTemplate field 0 kind must be 'line' or 'paragraph'"
+    )
+    expect(errors).toContain('session 2 deliverableTemplate field ids must be unique')
+  })
+})
+
 describe('validatePlan type-checks the measured duration fields (issue 13)', () => {
   it('accepts a plan whose measurement fields are well-typed', () => {
     const plan = clonePlan(fixturePlan)

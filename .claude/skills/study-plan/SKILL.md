@@ -138,6 +138,40 @@ and a compressed material set sized to the day.
 the learner is behind, spaced review of the highest-frequency units when they
 are not. Write the artifact and self-check so both readings work.
 
+**Deliverable template** — emit one when the artifact is a written thing and
+the self-check is answered by reading what the learner wrote, not by running
+something they built. Thesis, memo, rubric, spec, playbook, walkthrough,
+evaluation, from-memory rewrite: yes. A repository, module, backtester,
+classifier, data loader, scheduled job, notebook, dataset: no — the session's
+detail renders exactly as before. For a mixed artifact (a strategy
+implemented by a coding agent from a written spec, or a consolidation
+session's written catch-up reading), emit a template for the written part
+only; the template's fields are the spec's sections or the rewrite's
+fields, and the behind-schedule reading that finishes a missing built
+artifact gets none. The validator checks structure, not appropriateness:
+a heuristic on the one-liner's words would be wrong often enough to train
+this skill to game it, so judgement lives here.
+
+A template is a list of **2 to 8 fields**, each `{ id, label, prompt, kind }`:
+a stable id (`^[a-z0-9]+(-[a-z0-9]+)*$`), the noun-phrase heading the learner
+sees, the question the field answers in one paragraph, and one of two kinds.
+**One field per thing the artifact's `artifactOneLiner` names, in the order
+it names them.** Session 2 — "who pays the premium, why the premium
+persists, the regime in which it is harvested, and the regime in which it
+blows up" — is four `paragraph` fields with those labels; session 8's rubric
+is its eight named rows as `paragraph` fields, capped at eight, so the
+ranked verdict becomes the eighth field's closing line rather than a ninth.
+A **`line`** field is for a title, a verdict, a number or a one-sentence
+claim (use it for an artifact's headline); **prompts are questions**,
+never restatements of the label ("Which party is structurally short this
+premium, and why do they accept the price?", not "Who pays?"). Never a
+field that asks for code, a URL to a repo, or a screenshot — if the
+honest fields would be those, the artifact is built, not written, and the
+template is omitted. **Ids stay meaningful** (`alpha-source`, not `field-1`)
+because the page stores the learner's answer under `<session>/<id>` and a
+label edit or a field reorder is allowed to leave the answer in place; an
+id change orphans it.
+
 ### 4. Source the materials
 
 Discovery is two-lane, every phase, run deliberately rather than as a fallback.
@@ -342,10 +376,13 @@ npm run redo -- <planDir> <sessionNumber> <replacement.json>
 - `<planDir>` is the directory the generator wrote (`baseDir/<subject-slug>/`).
 - `<sessionNumber>` is the integer session number being replaced (1–14).
 - `<replacement.json>` is a `Session` document (see `Session` in
-  [`src/plan-types.ts`](../../../src/plan-types.ts)) whose `number` equals
+  [`src/plan-types.ts`](../../../src/plan-types.ts) whose `number` equals
   `<sessionNumber>`. The replacement may change title, artifact, self-check,
-  materials, estimated time, CAFE fields, and the consolidation flag. **Do not
-  rewrite the other sessions** — write only the one replacement file.
+  materials, estimated time, CAFE fields, the consolidation flag, and the
+  optional `deliverableTemplate` (a replacement session may carry its own
+  template, drop the one the page was showing, or both — see the
+  template rule in step 3). **Do not rewrite the other sessions** — write
+  only the one replacement file.
 - HTML is not accepted: the deterministic shell only ever works from
   structured plan data.
 

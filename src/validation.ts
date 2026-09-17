@@ -1,7 +1,9 @@
-import type { Material, MeasurementBasis, PlanData } from './plan-types.ts'
+import type { Material, MeasurementBasis, PlanData, DeliverableField } from './plan-types.ts'
 import {
   CONSOLIDATION_SLOTS,
+  MAX_DELIVERABLE_FIELDS,
   MAX_URLS_PER_PUBLISHER,
+  MIN_DELIVERABLE_FIELDS,
   MIN_REPEATED_UNIT_SESSIONS,
   consolidationSlotsDescription,
 } from './plan-types.ts'
@@ -12,6 +14,8 @@ export type ValidationError = string
 function require_(errors: ValidationError[], value: unknown, message: string): void {
   if (!value) errors.push(message)
 }
+
+const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 /**
  * Reduce a material URL to the form the per-publisher cap counts as one
@@ -228,6 +232,15 @@ export function validatePlan(plan: PlanData): ValidationError[] {
     if (CONSOLIDATION_SLOTS.has(session.number) && !session.consolidation) {
       errors.push(`session ${session.number} must be marked consolidation`)
     }
+
+    // Deliverable template (issue 14). The template is optional: a session
+    // without one (an artifact built rather than written) produces no
+    // template errors. When present, every structural violation is reported
+    // separately so the message the skill acts on is the right one.
+    const template = session.deliverableTemplate
+    if (template !== undefined) {
+      validateDeliverableTemplate(template, session.number, errors)
+    }
   }
 
   for (let i = 0; i < phases.length; i++) {
@@ -336,4 +349,58 @@ export function validatePlan(plan: PlanData): ValidationError[] {
   }
 
   return errors
+}
+
+/**
+ * Push every structural violation of a session's deliverable template into
+ * `errors`. The set of fields, id slugs, labels, prompts and kinds are
+ * checked so the skill gets all the messages it needs to fix in one pass
+ * rather than one per round.
+ *
+ * The errors are produced for `session N` with i being the zero-based index
+ * in the template's fields array. The bounds error is produced once. The
+ * uniqueness error is produced once even if multiple ids collide.
+ */
+function validateDeliverableTemplate(
+  template: unknown,
+  sessionNumber: number,
+  errors: ValidationError[]
+): void {
+  const prefix = `session ${sessionNumber} deliverableTemplate`
+  const fields = (template as { fields: unknown } | null | undefined)?.fields
+  if (!Array.isArray(fields)) {
+    errors.push(`${prefix}.fields must be an array of ${MIN_DELIVERABLE_FIELDS} to ${MAX_DELIVERABLE_FIELDS} fields`)
+    return
+  }
+  if (fields.length < MIN_DELIVERABLE_FIELDS || fields.length > MAX_DELIVERABLE_FIELDS) {
+    errors.push(`${prefix}.fields must be an array of ${MIN_DELIVERABLE_FIELDS} to ${MAX_DELIVERABLE_FIELDS} fields`)
+  }
+  const seenIds = new Set<string>()
+  let duplicateIds = false
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i] as Partial<DeliverableField> | null | undefined
+    if (!field || typeof field !== 'object') {
+      errors.push(`${prefix} field ${i} must be an object`)
+      continue
+    }
+    if (typeof field.id !== 'string' || !SLUG_RE.test(field.id)) {
+      errors.push(`${prefix} field ${i} id must be a slug`)
+    } else if (seenIds.has(field.id)) {
+      duplicateIds = true
+    } else {
+      seenIds.add(field.id)
+    }
+    if (typeof field.label !== 'string' || !field.label) {
+      errors.push(`${prefix} field ${i} label is required`)
+    }
+    if (typeof field.prompt !== 'string' || !field.prompt) {
+      errors.push(`${prefix} field ${i} prompt is required`)
+    }
+    if (field.kind !== 'line' && field.kind !== 'paragraph') {
+      errors.push(`${prefix} field ${i} kind must be 'line' or 'paragraph'`)
+    }
+  }
+  if (duplicateIds) {
+    errors.push(`${prefix} field ids must be unique`)
+  }
 }
