@@ -597,6 +597,15 @@ describe('a templated session renders an outline the learner can fill in (issue 
     expect(block.querySelector('b')).toBeNull()
     expect(block.querySelector('em')).toBeNull()
   })
+
+  it('escapes a field id everywhere it enters an HTML attribute', () => {
+    const plan = clonePlan(fixturePlan)
+    const session = plan.sessions.find((s) => s.number === TEMPLATED_NUMBER)!
+    session.deliverableTemplate!.fields[0].id = 'safe" onfocus="alert(1)'
+    const html = renderPlan(plan)
+    expect(html).toContain('safe&quot; onfocus=&quot;alert(1)')
+    expect(html).not.toContain('id="deliverable-2-safe" onfocus="alert(1)')
+  })
 })
 
 describe('consumption time appears on the page when measurement disagrees with the estimate (issue 13)', () => {

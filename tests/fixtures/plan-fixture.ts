@@ -116,7 +116,7 @@ export const fixturePlan: PlanData = {
           {
             id: 'headline',
             label: 'Headline',
-            prompt: 'One sentence stating the alpha in a form you could put on a slide.',
+            prompt: 'What one-sentence alpha claim could you put on a slide?',
             kind: 'line',
           },
         ],

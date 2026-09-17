@@ -772,7 +772,7 @@ function renderMaterial(material: Material): string {
 }
 
 function renderDeliverableField(field: DeliverableField, sessionNumber: string): string {
-  const inputId = `deliverable-${sessionNumber}-${field.id}`
+  const inputId = `deliverable-${sessionNumber}-${esc(field.id)}`
   const inputClass = 'deliverable-input ' + esc(field.kind)
   const placeholder = esc(field.prompt)
   const input =
