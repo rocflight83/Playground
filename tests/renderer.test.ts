@@ -7,6 +7,14 @@ function clonePlan(plan: PlanData): PlanData {
   return JSON.parse(JSON.stringify(plan)) as PlanData
 }
 
+function giveEveryPhaseAStory(plan: PlanData): PlanData {
+  const seed = plan.phases[0].outlierStory!
+  for (let i = 1; i < plan.phases.length; i++) {
+    plan.phases[i].outlierStory = { ...seed }
+  }
+  return plan
+}
+
 function load(html: string): JSDOM {
   return new JSDOM(html, { runScripts: 'dangerously' })
 }
@@ -206,13 +214,9 @@ describe('the page reads as a study plan', () => {
   })
 
   it('renders a muted placeholder at the phase boundary when the story is absent', () => {
-    const plan = clonePlan(fixturePlan)
+    const plan = giveEveryPhaseAStory(clonePlan(fixturePlan))
     // Copy phase 0's story onto the other two phases so we can delete phase 1's
     // and confirm only that one becomes a placeholder.
-    const seed = plan.phases[0].outlierStory!
-    for (let i = 1; i < plan.phases.length; i++) {
-      plan.phases[i].outlierStory = { ...seed }
-    }
     delete plan.phases[1].outlierStory
     const doc = structure(renderPlan(plan))
 
@@ -241,6 +245,7 @@ describe('the page reads as a study plan', () => {
     for (const placeholder of placeholders) {
       expect(placeholder.querySelector('h3')).toBeNull()
       expect(placeholder.querySelector('a')).toBeNull()
+      expect(placeholder.querySelector('.tag')).toBeNull()
       expect(placeholder.children).toHaveLength(1)
       expect(placeholder.firstElementChild?.tagName).toBe('P')
     }
@@ -251,20 +256,12 @@ describe('the page reads as a study plan', () => {
     const placeholders = Array.from(doc.querySelectorAll('.outlier-story--empty'))
     expect(placeholders.length).toBeGreaterThan(0)
     for (const placeholder of placeholders) {
-      const text = (placeholder.textContent ?? '').toLowerCase()
-      expect(text).toContain('no ')
-      expect(text).toContain('subject-specific')
-      expect(text).toContain('outlier')
-      expect(text).toContain('case')
+      expect(placeholder.textContent?.trim()).toBe('No subject-specific outlier case found for this phase.')
     }
   })
 
   it('renders one .outlier-story node per phase and no placeholder when every phase has a story', () => {
-    const plan = clonePlan(fixturePlan)
-    const seed = plan.phases[0].outlierStory!
-    for (let i = 1; i < plan.phases.length; i++) {
-      plan.phases[i].outlierStory = { ...seed }
-    }
+    const plan = giveEveryPhaseAStory(clonePlan(fixturePlan))
     const doc = structure(renderPlan(plan))
 
     expect(doc.querySelectorAll('.outlier-story')).toHaveLength(plan.phases.length)
