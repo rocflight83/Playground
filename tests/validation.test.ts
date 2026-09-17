@@ -681,3 +681,161 @@ describe('validatePlan type-checks the measured duration fields (issue 13)', () 
     ])
   })
 })
+
+describe('validatePlan — curationLog (issue 15)', () => {
+  it('accepts a plan with no curationLog (the field is optional)', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.curationLog
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('accepts a plan with an empty curationLog array', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = []
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('accepts a structurally valid curationLog carrying replacedSession on drop-as-known', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'drop-as-known',
+        sessionNumber: 3,
+        at: '2026-02-10T00:00:00.000Z',
+        known: 'I already know functions',
+        knownSummary: 'Functions are second nature.',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+      },
+    ]
+    expect(validatePlan(plan)).toEqual([])
+  })
+
+  it('rejects a record with an unknown intent', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'rewrite',
+        sessionNumber: 3,
+        at: '2026-02-10T00:00:00.000Z',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+      } as never,
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog\[0\] intent/i.test(e) && /must be/i.test(e))).toBe(true)
+  })
+
+  it('rejects a record with an out-of-range sessionNumber', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'redo-session',
+        sessionNumber: 15,
+        at: '2026-02-10T00:00:00.000Z',
+        replacedSession: plan.sessions.find((s) => s.number === 1)!,
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0.*sessionNumber/i.test(e) && /1.*14/.test(e))).toBe(true)
+  })
+
+  it('rejects a record with an empty at', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'redo-session',
+        sessionNumber: 3,
+        at: '',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0.*at/i.test(e) && /empty|required/i.test(e))).toBe(true)
+  })
+
+  it('rejects a record carrying both replacedSession and replacedMaterial', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'redo-session',
+        sessionNumber: 3,
+        at: '2026-02-10T00:00:00.000Z',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+        replacedMaterial: plan.sessions[2].materials[0],
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0.*one of/i.test(e))).toBe(true)
+  })
+
+  it('rejects a record carrying neither replacedSession nor replacedMaterial', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'redo-session',
+        sessionNumber: 3,
+        at: '2026-02-10T00:00:00.000Z',
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0.*one of/i.test(e))).toBe(true)
+  })
+
+  it('rejects a swap-material record carrying replacedSession instead of replacedMaterial', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'swap-material',
+        sessionNumber: 3,
+        at: '2026-02-10T00:00:00.000Z',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0.*swap-material/i.test(e) && /replacedMaterial/i.test(e))).toBe(true)
+  })
+
+  it('rejects a drop-as-known record carrying replacedMaterial instead of replacedSession', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'drop-as-known',
+        sessionNumber: 3,
+        at: '2026-02-10T00:00:00.000Z',
+        known: 'X',
+        knownSummary: 'Y',
+        replacedMaterial: plan.sessions[2].materials[0],
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0.*drop-as-known/i.test(e) && /replacedSession/i.test(e))).toBe(true)
+  })
+
+  it('rejects a curationLog that is not an array', () => {
+    const plan = clonePlan(fixturePlan)
+    // @ts-expect-error deliberately malformed
+    plan.curationLog = 'not an array'
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog must be an array/i.test(e))).toBe(true)
+  })
+
+  it('reports multiple invalid records by index', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.curationLog = [
+      {
+        intent: 'redo-session',
+        sessionNumber: 3,
+        at: '',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+      },
+      {
+        intent: 'redo-session',
+        sessionNumber: 15,
+        at: '2026-02-10T00:00:00.000Z',
+        replacedSession: plan.sessions.find((s) => s.number === 1)!,
+      },
+    ]
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => /curationLog.*0/.test(e))).toBe(true)
+    expect(errors.some((e) => /curationLog.*1/.test(e))).toBe(true)
+  })
+})

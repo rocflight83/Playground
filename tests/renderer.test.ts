@@ -1114,3 +1114,44 @@ describe('the page is a quiet document that supports light and dark (issue 10)',
     expect(html.indexOf(fixturePlan.meta.currentLevel)).toBeLessThan(html.indexOf('class="session"'))
   })
 })
+
+describe('renderer ignores curationLog (issue 15, scenario 16)', () => {
+  it('renders byte-identically with and without a curationLog', () => {
+    const plan = clonePlan(fixturePlan)
+    const htmlWithoutLog = renderPlan(plan)
+    plan.curationLog = [
+      {
+        intent: 'redo-session',
+        sessionNumber: 4,
+        at: '2026-02-10T00:00:00.000Z',
+        replacedSession: plan.sessions.find((s) => s.number === 4)!,
+      },
+    ]
+    const htmlWithLog = renderPlan(plan)
+    expect(htmlWithLog).toBe(htmlWithoutLog)
+  })
+
+  it('renders byte-identically with a multi-record curationLog', () => {
+    const plan = clonePlan(fixturePlan)
+    const htmlWithoutLog = renderPlan(plan)
+    plan.curationLog = [
+      {
+        intent: 'drop-as-known',
+        sessionNumber: 3,
+        at: '2026-02-09T00:00:00.000Z',
+        known: 'X',
+        knownSummary: 'Y',
+        replacedSession: plan.sessions.find((s) => s.number === 3)!,
+      },
+      {
+        intent: 'swap-material',
+        sessionNumber: 5,
+        at: '2026-02-10T00:00:00.000Z',
+        reason: 'too dense',
+        replacedMaterial: plan.sessions[4].materials[0],
+      },
+    ]
+    const htmlWithLog = renderPlan(plan)
+    expect(htmlWithLog).toBe(htmlWithoutLog)
+  })
+})

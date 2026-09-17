@@ -39,6 +39,11 @@ fields) for sessions whose artifact is written rather than built: the
 page renders a form per templated session, answers persist in the existing
 `studyPlanProgress` store under `deliverables[session][field]`, and a
 "Download deliverable" button per template writes a Markdown file.
+Ticket 15 adds the curation intent model: three intents — `drop-as-known`,
+`swap-material`, `redo-session` — share `applyCuration(plan, request)` in
+`src/curation.ts` (a pure function) plus `curatePlanDir(planDir, request,
+options)` in `src/maintenance.ts` and `npm run curate`; `PlanData.curationLog?`
+records every applied curation; `redoSession` is now a thin wrapper.
 
 ## Build and test commands
 
@@ -53,11 +58,17 @@ carry an explicit `.ts` extension: Node's ESM resolver requires it.
 - `npm run verify -- <planDir>` — verify mode: re-check every URL in an
   existing plan directory and rewrite its `plan.json` and `index.html` in
   place (never allocates a new directory)
-- `npm run redo -- <planDir> <sessionNumber> <replacement.json>` — redo mode:
+- `npm run redo -- <planDir> <sessionNumber> <replacement.json>` — redo mode
+  (a one-line alias for `npm run curate` with a `redo-session` request):
   splice one replacement session into an existing plan directory, verify only
   that session's links, and rewrite `plan.json` and `index.html` in place.
   The other thirteen sessions, browser progress, and the directory name all
   survive untouched.
+- `npm run curate -- <planDir> <request.json>` — curation mode: apply a
+  `drop-as-known`, `swap-material`, or `redo-session` request and write the
+  result back into the same directory. A refused curation leaves the
+  directory byte-identical; the printed JSON names every refusal reason and
+  the stage it failed at (`request`, `merged-plan`, or `verification`).
 - `npm test` — run the whole suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (run this regularly; it must stay clean)
@@ -101,15 +112,29 @@ be followed downstream):
   plan prose is authored.
 - `src/plan-types.ts` — the plan data model (meta, scope note, DISSS preamble,
   stakes, phases, sessions with their CAFE fields, materials, verification
-  records, outlier stories with their own `verification` records, and the
-  optional `deliverableTemplate`), plus `CONSOLIDATION_SLOTS` — the single
-  home of the consolidation-slot policy, which error messages and docs derive
-  from rather than restate.
+  records, outlier stories with their own `verification` records, the
+  optional `deliverableTemplate`, and the optional `curationLog` carrying
+  every applied curation verbatim so a later undo can restore what was
+  replaced), plus `CONSOLIDATION_SLOTS` and `ALREADY_KNOWN_MARKER` — the
+  single homes of the consolidation-slot policy and the marker a
+  drop-as-known curation appends to `meta.currentLevel`, which error
+  messages and docs derive from rather than restate.
 - `src/renderer.ts` — Seam 1: `renderPlan(plan): string`. A templated
   session's detail renders a fillable form with a per-template "Download
   deliverable" button; learner answers live in the page's progress store
-  under `deliverables[session][field]`, never in `PlanData`.
+  under `deliverables[session][field]`, never in `PlanData`. The renderer
+  ignores `curationLog` — curations render exactly like any other session
+  or material.
 - `src/slug.ts` — `slugify(subject): string` for naming each plan's directory.
+- `src/curation.ts` — `applyCuration(plan, request): PlanData`. A pure
+  function that applies one of three curation intents (`drop-as-known`,
+  `swap-material`, `redo-session`) and returns the new plan, or throws
+  `CurationRefusedError` with every refusal reason and the stage
+  (`request`, `merged-plan`, or `verification`) it failed at. No I/O, no
+  `Date`, no mutation. The original session or material that was replaced
+  is preserved verbatim on the appended log record so a later undo can
+  restore it. Also defines the request types (`CurationRequest` and its
+  three variants), `CurationOutcome`, and `CurationRefusedError`.
 - `src/publisher.ts` — `publisherKey(url): string | null`, a pure function
   that maps a material URL to the publisher the per-publisher cap counts.
   Reduces subdomains to the registrable domain (`cdn.cboe.com` =
@@ -136,7 +161,7 @@ be followed downstream):
   tier on known forum hosts, and type-checks the measurement fields
   (`measuredDuration` positive number; `measuredBy` one of the three
   bases; both-or-neither).
-- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure?, sessionNumbers? })`.
+- `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure?, sessionNumbers?, materialUrls?, noSubstitution? })`.
   Returns a new plan with refreshed verification records plus a report.
   Replaces failed links via `searchReplacement` up to two attempts per
   slot, then records the slot `unresolved-after-retries`. Outlier-story
@@ -146,7 +171,14 @@ be followed downstream):
   rather than silently removed, so rot is visible on the page. When
   `sessionNumbers` is set, only those sessions' materials are fetched and
   re-timestamped; other session objects (and outlier-story citations) pass
-  through unchanged, which is what single-session redo relies on. Content
+  through unchanged, which is what single-session redo relies on. When
+  `materialUrls` is set, only materials whose URL is in the set are
+  fetched inside the selected sessions; others pass through with their
+  records intact — used by single-material curation. When `noSubstitution`
+  is set, `searchReplacement` is not consulted on failure; a single fetch
+  attempt is made and a failed candidate is recorded as
+  `unresolved-after-retries` — used by swap-material on the url path, so
+  a learner-supplied URL is admitted on its merits or refused. Content
   verification (fetch the body, confirm it covers the claimed concept)
   applies to every non-`preferred` material and to every anchor — i.e.
   `sourceType !== 'preferred' || isAnchor`. **Measurement**: every material
@@ -171,12 +203,17 @@ be followed downstream):
   browser progress (keyed by session number) survives untouched. Unresolved
   materials keep their original title and URL with status
   `unresolved-after-retries`; the renderer surfaces the warning. Also exports
-  `redoSession(planDir, sessionNumber, replacement, { fetch, searchReplacement, now?, fs? })`:
-  reads `plan.json`, splices `replacement` (whose `number` must equal
-  `sessionNumber`) into a fresh copy, validates the merged plan, re-verifies
-  only the targeted session's materials, validates the verified plan, and
-  writes both files in place. The other thirteen sessions, the directory
-  name, and browser progress all stay untouched.
+  `curatePlanDir(planDir, request, options)` which reads the existing
+  `plan.json`, validates it, runs `applyCuration` (a pure function),
+  validates the merged plan, re-verifies only the targeted session (and
+  on the swap-material url path, only the swapped URL with
+  `noSubstitution` so a learner-supplied URL is either admitted or refused),
+  validates the verified plan, and writes both files in place. Refusals at
+  any stage leave the directory byte-identical. `redoSession(planDir,
+  sessionNumber, replacement, ...)` is now a thin wrapper that builds a
+  `RedoSessionRequest` (with `at` from `options.now?.() ?? new Date()
+  .toISOString()`) and calls `curatePlanDir`, keeping its number-mismatch
+  error message verbatim so the existing CLI and tests pass unchanged.
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,
@@ -190,6 +227,14 @@ be followed downstream):
   generate mode. The replacement is read from a JSON file (HTML is rejected
   with a JSON error), and the supplied session number must match
   `replacement.number` for the call to make it past argument validation.
+- `scripts/curate.ts` — the command behind `npm run curate`. Wires the real
+  `fetch` into `curatePlanDir` and prints a JSON summary shaped like
+  `{ ok: true, planDir, planPath, htmlPath, intent, sessionNumber,
+  unresolved, durationWarnings }` on applied, or `{ ok: false, refused,
+  stage }` / `{ ok: false, validationErrors }` / `{ ok: false, error }`
+  on the three refusal shapes. The request is read from a JSON file (HTML
+  is rejected with a JSON error) and `at` is filled with the current time
+  when omitted.
 - `scripts/proxy-preload.mjs` — `--import`ed by all three commands above.
   Node's `fetch` ignores `HTTP_PROXY`/`HTTPS_PROXY`, so on a machine that only
   reaches the web through a local proxy every link check fails with a DNS or

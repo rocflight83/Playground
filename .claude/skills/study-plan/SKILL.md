@@ -358,72 +358,178 @@ re-verification does not regenerate that storage, only the `plan.json` and
 directory) is also a supported workflow but produces a fresh directory; use
 `npm run verify` when the goal is to keep the existing one.
 
-## Redo mode
+## Curation
 
-When a single session turns out to be wrong — the artifact does not deliver,
-the materials are wrong, the self-check is a moving target — re-plan that
-session against the plan's current honest target (or stated target when no
-honest target exists), level, hours, DISSS units, and consolidation policy,
-and replace just it in place. The other thirteen sessions, the learner's
-browser progress, the directory name, and every other plan field all stay
-untouched, because progress is keyed by session number and the replacement
-preserves it.
+Three learner-initiated changes, all of which replace one session or one
+material while leaving the **sprint frame** intact. The frame — fourteen
+sessions numbered 1–14, consolidation at sessions 6 and 11, a free path
+through every session, at most one paid material — never bends; a request
+that would break it is refused with the reason named before any network
+call. The other sessions, the learner's browser progress, the directory
+name, and every other plan field all stay untouched, because progress is
+keyed by session number and the replacement preserves it.
 
 ```
-npm run redo -- <planDir> <sessionNumber> <replacement.json>
+npm run curate -- <planDir> <request.json>
 ```
 
 - `<planDir>` is the directory the generator wrote (`baseDir/<subject-slug>/`).
-- `<sessionNumber>` is the integer session number being replaced (1–14).
-- `<replacement.json>` is a `Session` document (see `Session` in
-  [`src/plan-types.ts`](../../../src/plan-types.ts) whose `number` equals
-  `<sessionNumber>`. The replacement may change title, artifact, self-check,
-  materials, estimated time, CAFE fields, the consolidation flag, and the
-  optional `deliverableTemplate` (a replacement session may carry its own
-  template, drop the one the page was showing, or both — see the
-  template rule in step 3). **Do not rewrite the other sessions** — write
-  only the one replacement file.
-- HTML is not accepted: the deterministic shell only ever works from
-  structured plan data.
+- `<request.json>` is a `CurationRequest` JSON document. The request carries
+  the replacement already produced — sourcing is judgement work and stays
+  with this skill — and the JSON shape is the module's interface in
+  [`src/curation.ts`](../../../src/curation.ts). HTML is not accepted.
+- `at` may be omitted; the script fills the current ISO timestamp. The
+  shell itself is pure.
+- The replacement must equal the session / material it replaces on every
+  identity field (`replacement.number` for sessions, the same index for
+  materials) — the shell refuses otherwise. Verification placeholders on
+  the replacement (`{ status: 'verified-by-status', checkedAt: null }`) are
+  overwritten by verification.
 
-Re-plan the one session:
+`npm run redo -- <planDir> <sessionNumber> <replacement.json>` remains as
+a one-line alias for `npm run curate` with a `redo-session` request.
+
+### Intent 1 — drop-as-known
+
+*"I already know this; give me something that moves me forward."*
+
+Request shape (`DropAsKnownRequest`):
+
+```json
+{
+  "intent": "drop-as-known",
+  "at": "<iso>",
+  "sessionNumber": 3,
+  "known": "I already write functions and modules fluently",
+  "knownSummary": "Functions, modules, and packages are second nature; treat them as known.",
+  "replacement": { /* a Session with number === 3 */ }
+}
+```
+
+Replacement duties:
+
+- Aim the replacement at the plan's current honest target (or stated
+  target when no honest target exists). The dropped session is **out of
+  the way**; the replacement **advances** the target.
+- Do not re-teach anything in `known` or in the extended
+  `meta.currentLevel`. The replacement's `highFrequencyUnits` are the
+  units it drills; if any of those units overlap with what `known` already
+  covers, the artifact does not move the learner forward.
+- Read the extended `currentLevel` (the prior paragraphs joined by
+  `\n\nAlready known: `) before writing — it tells you what the learner
+  has said is in hand across earlier drops.
+- Keep drilling the plan's high-frequency units on harder material rather
+  than dropping them. The shell checks the CAFE repetition floor on the
+  merged plan; do not let the replacement be the one unit-list nobody
+  else carries.
+- When dropping a late session (11–14), there is no later session to
+  advance into. **Deepen** the target (a harder artifact on the same
+  target) rather than **extending** past it.
+- The shell refuses when the session is a consolidation slot (6, 11).
+  Use **redo-session** to rewrite a bad consolidation slot.
+
+### Intent 2 — swap-material
+
+*"Not this resource — one that does the same job, but …"* (reason path)
+or *"— this one instead"* (url path).
+
+Request shape (`SwapMaterialRequest`):
+
+```json
+{
+  "intent": "swap-material",
+  "at": "<iso>",
+  "sessionNumber": 3,
+  "materialUrl": "https://example.com/the-material-being-swapped",
+  "by": { "reason": "too dense" },
+  "replacement": { /* a Material with paid: false */ }
+}
+```
+
+The `by` field is exactly one of:
+
+- `{ "reason": "<free text>" }` — a reason like *too basic*, *too
+  advanced*, *want a practitioner take*, *wrong format*, *dead link*.
+- `{ "url": "https://learner.example.com/article" }` — the learner
+  supplied a URL they trust.
+
+Replacement duties:
+
+- Same units as the old material served. The artifact still has to be
+  buildable from the session's set.
+- Honour the reason. *too basic* moves to a harder source on the same
+  unit; *too advanced* moves to a clearer one; *want a practitioner take*
+  reaches for Lane B; *wrong format* swaps a video for a written resource
+  or vice versa.
+- Fit the remaining budget: `replacement.estimatedDuration ≤
+  session.estimatedTime − Σ(other materials' estimatedDuration)`. If the
+  replacement is too long, the shell refuses — pick something shorter.
+- `paid: false` is required. Curation never introduces a paid material;
+  swapping the only paid material out is allowed and leaves the plan with
+  zero paid materials.
+- **Url path** — fill in `title`, `sourceType` (`'off-list'` unless the
+  URL is preferred-tier; `'practitioner'` once the practitioner tier
+  exists and the URL qualifies), and `estimatedDuration`. The URL itself
+  is not changed. The shell verifies the URL to the **off-list bar**
+  (page must cover the concept) and never substitutes: a learner-supplied
+  URL is either admitted or refused.
+- **Reason path** — the shell uses the existing verification behaviour
+  (status or content check per tier; up to two replacement attempts when
+  `searchReplacement` is wired, but `npm run curate` does not wire it).
+  An unverifiable replacement is written with `unresolved-after-retries`
+  and the page shows the same warning as a rotted link.
+
+### Intent 3 — redo-session
+
+*"This session is wrong; re-plan it."* Folds the previous `npm run redo`
+into the same command. The replacement duties are the ones that lived on
+the old redo command:
 
 - Read the existing `plan.json` in the target directory and the selected
-  session. The replacement is shaped to fit the plan the generator built:
-  its DISSS units come from the same deconstruction, its level matches the
-  stated current level, its time budget fits `hoursPerDay`, and its
-  consolidation flag (if any) follows the same session-6 and session-11
-  rule. Aim the replacement at the plan's current honest target (or stated
-  target when no honest target exists), keeping that level, hours, DISSS
-  units, and consolidation policy.
+  session. Aim the replacement at the plan's current honest target (or
+  stated target when no honest target exists), keeping that level, hours,
+  DISSS units, and consolidation policy.
+- The replacement may change title, artifact, self-check, materials,
+  estimated time, CAFE fields, the consolidation flag, and the optional
+  `deliverableTemplate` (a replacement session may carry its own template,
+  drop the one the page was showing, or both — see the template rule in
+  step 3).
 - Keep exactly one artifact, one binary self-check, and a free path to
-  completion (one free material), same as a generated session.
-- Source and verify only the replacement session's materials: the command
-  re-verifies those URLs against the live web before re-rendering. Other
-  sessions' links are not re-checked and their timestamps are not refreshed,
-  so their previous verification records survive.
+  completion (one free material).
+- `replacement.number` must equal `sessionNumber`. The session number is
+  what preserves browser progress; the shell refuses a mismatch.
+- The shell re-verifies only the replacement session's materials. Other
+  sessions' verification records and timestamps ride through unchanged.
 
-Write the temporary `replacement.json`, then run the command. Read the JSON
-it prints:
+### Reading the printed JSON
 
-- `"ok": true` — the directory was updated in place. Tell the learner the
-  plan now contains the new session, and report any `unresolved` entries
-  (links that failed verification — they stay on the page with a visible
-  "⚠ Unverified material" warning, the same affordance as a rotted link in
-  verify mode). Read `durationWarnings` the same way as in generate mode:
-  set `estimatedDuration` to the measurement when it is right and
+- `"ok": true` — the directory was updated in place. The summary carries
+  `planDir`, `planPath`, `htmlPath`, `intent`, `sessionNumber`, `unresolved`,
+  and `durationWarnings`. Report any `unresolved` entries (links that
+  failed verification — they stay on the page with a visible "⚠ Unverified
+  material" warning). Read `durationWarnings` the same way as in generate
+  mode: set `estimatedDuration` to the measurement when it is right and
   rebalance `estimatedTime` so the artifact keeps its budget; otherwise
   keep the estimate.
-- `"ok": false` with `validationErrors` — the merged plan (the existing
-  twelve untouched sessions plus the replacement) failed validation.
-  Fix the listed errors and re-run. Nothing was written.
-- `"ok": false` with `error` — the directory or replacement file is wrong
-  (missing `plan.json`, replacement's session number does not match,
-  replacement file looks like HTML, JSON parse error, …). Nothing was
-  written; fix and re-run.
+- `"ok": false` with `refused` and `stage` — the curation was refused.
+  The directory on disk is **byte-identical** to before. `stage` is one of
+  `request` (the request shape broke the sprint frame: paid replacement,
+  consolidation-slot drop, budget exceeded, material not found), `merged-plan`
+  (the merged plan failed validation), or `verification` (only on the
+  swap-material url path: the learner-supplied URL did not verify, and
+  `searchReplacement` was never called). Fix the listed `refused` reasons
+  and re-run. The learner can supply another URL or switch to the reason
+  path on a url-path refusal.
+- `"ok": false` with `validationErrors` — the on-disk plan is
+  structurally invalid (likely a hand-edit gone wrong). Nothing was
+  written; fix the data and re-run.
+- `"ok": false` with `error` — the directory or request file is wrong
+  (missing `plan.json`, request file looks like HTML, JSON parse error,
+  …). Nothing was written; fix and re-run.
 
-The skill writes the replacement JSON and the plan data only. It never
-writes HTML, and it never touches the other thirteen sessions.
+The skill writes the request JSON and the plan data only. It never writes
+HTML, never touches the other thirteen sessions, and never invents the
+replacement.
 
 ## Preferred sources
 

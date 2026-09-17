@@ -95,6 +95,25 @@ export interface OutlierStory {
   verification?: VerificationRecord
 }
 
+export type CurationIntent = 'drop-as-known' | 'swap-material' | 'redo-session'
+
+export interface CurationRecord {
+  intent: CurationIntent
+  sessionNumber: number
+  at: string
+  /** drop-as-known: the learner's words. */
+  known?: string
+  /** drop-as-known: the intelligence's restatement, in the voice of currentLevel. */
+  knownSummary?: string
+  /** swap-material (reason path) and redo-session. */
+  reason?: string
+  /** swap-material (url path): the learner-supplied URL. */
+  suppliedUrl?: string
+  /** What was replaced, verbatim, so a later undo can restore it. Exactly one is set. */
+  replacedSession?: Session
+  replacedMaterial?: Material
+}
+
 export interface PlanData {
   meta: {
     subject: string
@@ -120,6 +139,14 @@ export interface PlanData {
   stakes: string
   phases: Phase[]
   sessions: Session[]
+  /**
+   * Append-only history of applied curations. Each record carries the session
+   * or material it replaced so a later undo can restore it. The renderer
+   * ignores this field; the page does not draw it. Validation checks the
+   * structure only — the sprint-frame invariants the records are tested
+   * against already live in `validatePlan`.
+   */
+  curationLog?: CurationRecord[]
 }
 
 /**
@@ -157,6 +184,15 @@ export const MAX_DELIVERABLE_FIELDS = 8
 export function consolidationSlotsDescription(): string {
   return [...CONSOLIDATION_SLOTS].sort((a, b) => a - b).join(' and ')
 }
+
+/**
+ * Marker a drop-as-known curation appends to `meta.currentLevel` so the
+ * learner's stated knowledge is recorded in the plan. The exact prefix is
+ * the contract the skill reads back; both sides of the seam state it in
+ * prose for the same reason CONSOLIDATION_SLOTS does. Change the constant
+ * and `.claude/skills/study-plan/SKILL.md` needs the same edit.
+ */
+export const ALREADY_KNOWN_MARKER = '\n\nAlready known: '
 
 /**
  * A unit must be drilled in at least this many sessions for the plan to

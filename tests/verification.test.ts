@@ -744,3 +744,101 @@ describe('verifyPlan measures consumption time on every verified material (issue
     expect(measuredResult.report.unresolvedCount).toBe(placeholderResult.report.unresolvedCount)
   })
 })
+
+describe('verifyPlan � curation filters (issue 15)', () => {
+  it('materialUrls restricts fetching within the selected sessions to those URLs; others ride through with records intact', async () => {
+    const plan = clonePlan(fixturePlan)
+    // Pick session 3 and 5 as the targeted sessions; flip them to preferred
+    // so the body doesn't need to cover the concept.
+    const target1 = plan.sessions.find((s) => s.number === 3)!
+    const target2 = plan.sessions.find((s) => s.number === 5)!
+    target1.materials[0].sourceType = 'preferred'
+    target2.materials[0].sourceType = 'preferred'
+    const target1Material = target1.materials[0]
+    const target2Material = target2.materials[0]
+    const seen: string[] = []
+    const fetchImpl = async (url: string): Promise<FetchResponse> => {
+      seen.push(url)
+      return ok()
+    }
+    const result = await verifyPlan(plan, {
+      fetch: fetchImpl,
+      searchReplacement: noReplacement,
+      now: fixedClock,
+      anchorUrls: [],
+      sessionNumbers: [3, 5],
+      materialUrls: [target1Material.url, target2Material.url],
+    })
+    expect(seen.sort()).toEqual([target1Material.url, target2Material.url].sort())
+    // The targeted materials have a refreshed timestamp.
+    const refreshed1 = result.plan.sessions.find((s) => s.number === 3)!.materials[0]
+    const refreshed2 = result.plan.sessions.find((s) => s.number === 5)!.materials[0]
+    expect(refreshed1.verification.checkedAt).toBe(fixedClock())
+    expect(refreshed2.verification.checkedAt).toBe(fixedClock())
+    // Non-targeted sessions are untouched (same verification record as input).
+    const untouched = result.plan.sessions.find((s) => s.number === 1)!
+    expect(untouched.materials[0].verification).toEqual(plan.sessions.find((s) => s.number === 1)!.materials[0].verification)
+  })
+
+  it('noSubstitution skips searchReplacement and records a failed candidate as unresolved-after-retries after a single attempt', async () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    plan.sessions[0].materials = [plan.sessions[0].materials[0]]
+    plan.sessions[0].materials[0].sourceType = 'preferred'
+    const deadUrl = plan.sessions[0].materials[0].url
+
+    let replacementCalls = 0
+    const searchReplacement: () => Promise<ReplacementCandidate | null> = async () => {
+      replacementCalls += 1
+      return null
+    }
+
+    const result = await verifyPlan(plan, {
+      fetch: async (url) => (url === deadUrl ? notFound() : ok()),
+      searchReplacement,
+      now: fixedClock,
+      anchorUrls: [],
+      noSubstitution: true,
+    })
+    expect(replacementCalls).toBe(0)
+    expect(result.plan.sessions[0].materials[0].verification.status).toBe('unresolved-after-retries')
+    expect(result.plan.sessions[0].materials[0].verification.checkedAt).toBeNull()
+  })
+
+  it('noSubstitution passes the search-replacement seam through when the first attempt succeeds', async () => {
+    // The noSubstitution flag gates the failure path; the success path is the
+    // standard verify flow.
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    plan.sessions[0].materials = [plan.sessions[0].materials[0]]
+    plan.sessions[0].materials[0].sourceType = 'preferred'
+
+    let replacementCalls = 0
+    const searchReplacement: () => Promise<ReplacementCandidate | null> = async () => {
+      replacementCalls += 1
+      return null
+    }
+    const result = await verifyPlan(plan, {
+      fetch: async () => ok(),
+      searchReplacement,
+      now: fixedClock,
+      anchorUrls: [],
+      noSubstitution: true,
+    })
+    expect(replacementCalls).toBe(0)
+    expect(result.plan.sessions[0].materials[0].verification.status).toBe('verified-by-status')
+  })
+
+  it('default (no filters) behaviour is preserved: every session and every URL is fetched', async () => {
+    const plan = clonePlan(fixturePlan)
+    const seen: string[] = []
+    const fetchImpl = async (url: string): Promise<FetchResponse> => {
+      seen.push(url)
+      return ok()
+    }
+    await verifyPlan(plan, { fetch: fetchImpl, searchReplacement: noReplacement, now: fixedClock })
+    const expectedUrls = fixturePlan.sessions.flatMap((s) => s.materials.map((m) => m.url))
+    expectedUrls.push(fixturePlan.phases[0].outlierStory!.citation)
+    expect(seen.sort()).toEqual(expectedUrls.sort())
+  })
+})

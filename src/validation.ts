@@ -1,4 +1,4 @@
-import type { Material, MeasurementBasis, PlanData, DeliverableField } from './plan-types.ts'
+import type { CurationIntent, Material, MeasurementBasis, PlanData, DeliverableField } from './plan-types.ts'
 import {
   CONSOLIDATION_SLOTS,
   MAX_DELIVERABLE_FIELDS,
@@ -8,6 +8,12 @@ import {
   consolidationSlotsDescription,
 } from './plan-types.ts'
 import { isForumHost, publisherKey } from './publisher.ts'
+
+const KNOWN_CURATION_INTENTS: ReadonlySet<CurationIntent> = new Set([
+  'drop-as-known',
+  'swap-material',
+  'redo-session',
+])
 
 export type ValidationError = string
 
@@ -348,7 +354,67 @@ export function validatePlan(plan: PlanData): ValidationError[] {
     require_(errors, plan.disssPreamble.sequencingRationale, 'disssPreamble.sequencingRationale is required')
   }
 
+  // Curation log (issue 15). The field is optional and absent / empty is
+  // valid; an applied curation always appends one record carrying what was
+  // replaced, so the shape of every record is constrained by the model. The
+  // renderer ignores this field, so a structurally-valid log never affects
+  // the page; the check exists to catch hand-edited or partially-applied
+  // records before they sneak into a future undo.
+  if (plan.curationLog !== undefined) {
+    validateCurationLog(plan.curationLog, errors)
+  }
+
   return errors
+}
+
+/**
+ * Push every structural violation of `curationLog` into `errors`. Each
+ * invalid record produces an error naming its index, so a plan with several
+ * bad records sees all of them reported at once.
+ */
+function validateCurationLog(log: unknown, errors: ValidationError[]): void {
+  if (!Array.isArray(log)) {
+    errors.push('curationLog must be an array')
+    return
+  }
+  for (let i = 0; i < log.length; i++) {
+    const record = log[i]
+    if (!record || typeof record !== 'object') {
+      errors.push(`curationLog[${i}] must be an object`)
+      continue
+    }
+    const r = record as { intent?: unknown; sessionNumber?: unknown; at?: unknown; replacedSession?: unknown; replacedMaterial?: unknown }
+    if (typeof r.intent !== 'string' || !KNOWN_CURATION_INTENTS.has(r.intent as CurationIntent)) {
+      errors.push(`curationLog[${i}] intent must be 'drop-as-known', 'swap-material' or 'redo-session'`)
+      continue
+    }
+    const intent = r.intent as CurationIntent
+    if (typeof r.sessionNumber !== 'number' || r.sessionNumber < 1 || r.sessionNumber > 14) {
+      errors.push(`curationLog[${i}] sessionNumber must be an integer in 1-14`)
+      continue
+    }
+    if (typeof r.at !== 'string' || r.at === '') {
+      errors.push(`curationLog[${i}] at is required and must be a non-empty ISO timestamp`)
+      continue
+    }
+    const hasSession = r.replacedSession !== undefined
+    const hasMaterial = r.replacedMaterial !== undefined
+    if (hasSession === hasMaterial) {
+      errors.push(`curationLog[${i}] must carry exactly one of replacedSession or replacedMaterial`)
+      continue
+    }
+    // swap-material carries the swapped-out material; the other two carry the
+    // replaced session. A kind mismatch here means a hand-edit (or a future
+    // bug) put the wrong slot on the record.
+    if (intent === 'swap-material' && hasSession) {
+      errors.push(`curationLog[${i}] intent 'swap-material' must carry replacedMaterial`)
+      continue
+    }
+    if (intent !== 'swap-material' && hasMaterial) {
+      errors.push(`curationLog[${i}] intent '${intent}' must carry replacedSession`)
+      continue
+    }
+  }
 }
 
 /**

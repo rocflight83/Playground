@@ -52,6 +52,21 @@ export interface VerifyPlanOptions {
    * preservation contract.
    */
   sessionNumbers?: Iterable<number>
+  /**
+   * Material URLs (as they appear in the input plan) to fetch within the
+   * selected sessions. Defaults to every URL. When set together with
+   * `sessionNumbers`, only materials whose URL is in the set are fetched;
+   * others pass through with records intact. Used by single-material
+   * curation, where the only slot being verified is the one being swapped.
+   */
+  materialUrls?: Iterable<string>
+  /**
+   * Skip `searchReplacement` on failure: a single fetch attempt is made and
+   * a failed candidate is recorded as `unresolved-after-retries`. The
+   * learner's supplied URL is either admitted on its merits or refused, with
+   * nothing in between. Defaults to false (the existing retry behaviour).
+   */
+  noSubstitution?: boolean
 }
 
 export interface MaterialVerificationOutcome {
@@ -248,6 +263,10 @@ async function verifyMaterial(
     }
 
     if (attempts >= MAX_REPLACEMENT_ATTEMPTS) break
+    // noSubstitution: the learner's URL is admitted on its merits or refused.
+    // A single attempt is made, and the failure is recorded without consulting
+    // searchReplacement. Used by swap-material on the url path.
+    if (opts.noSubstitution) break
 
     const replacement = await opts.searchReplacement(concept, triedUrls)
     if (!replacement) break
@@ -312,6 +331,7 @@ export async function verifyPlan(
   const targetNumbers = opts.sessionNumbers
     ? new Set(opts.sessionNumbers)
     : null
+  const targetMaterials = opts.materialUrls ? new Set(opts.materialUrls) : null
   const durationWarnings: DurationWarning[] = []
   const sessionResults = await Promise.all(
     plan.sessions.map(async (session) => {
@@ -320,6 +340,14 @@ export async function verifyPlan(
       }
       const results = await Promise.all(
         session.materials.map(async (material) => {
+          if (targetMaterials && !targetMaterials.has(material.url)) {
+            // Inside the selected sessions, materials whose URLs are not in
+            // the set pass through with their records and timestamps intact.
+            return {
+              material,
+              outcome: { materialTitle: material.title, url: material.url, status: material.verification.status, attempts: 0 },
+            }
+          }
           const isAnchor = anchorUrls.has(material.url)
           const result = await verifyMaterial(material, isAnchor, session.number, opts)
           if (result.durationWarning) durationWarnings.push(result.durationWarning)

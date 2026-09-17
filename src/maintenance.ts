@@ -8,6 +8,12 @@ import { renderPlan } from './renderer.ts'
 import { validatePlan } from './validation.ts'
 import type { VerificationReport, VerifyPlanOptions } from './verification.ts'
 import { verifyPlan } from './verification.ts'
+import {
+  CurationRefusedError,
+  type CurationOutcome,
+  type CurationRequest,
+  applyCuration,
+} from './curation.ts'
 
 export interface MaintenanceResult {
   planDir: string
@@ -15,6 +21,20 @@ export interface MaintenanceResult {
   htmlPath: string
   plan: PlanData
   report: VerificationReport
+}
+
+/**
+ * `curatePlanDir` returns the outcome of the curation rather than a
+ * (plan, report) pair: a refused curation has nothing to put on disk, so the
+ * caller needs the refusal reason and the stage it failed at. An applied
+ * curation carries the new plan, the verification report, and the appended
+ * log record.
+ */
+export interface CurateResult {
+  planDir: string
+  planPath: string
+  htmlPath: string
+  outcome: CurationOutcome
 }
 
 export interface MaintenanceOptions extends VerifyPlanOptions {
@@ -153,6 +173,143 @@ export async function reverifyPlanDir(
 }
 
 /**
+ * Curation mode: read an existing plan directory, apply one curation
+ * (drop-as-known, swap-material, or redo-session), verify only what changed,
+ * validate the result, and write both files in place. A refused curation
+ * leaves the directory byte-identical: nothing on disk changes until the
+ * merged plan validates, the verified plan validates again, and the
+ * write succeeds atomically.
+ *
+ * For `swap-material` on the url path, a learner-supplied URL that fails
+ * verification is a refusal at stage `verification`, not an unresolved
+ * slot: a URL the learner chose is either admitted as they chose it or
+ * refused, and `searchReplacement` is never consulted.
+ *
+ * For `redo-session` and the reason path of `swap-material`, an
+ * unverifiable replacement material is written with status
+ * `unresolved-after-retries` and reported as unresolved — the existing
+ * behaviour, lifted from `redoSession`.
+ */
+export async function curatePlanDir(
+  planDir: string,
+  request: CurationRequest,
+  options: MaintenanceOptions
+): Promise<CurateResult> {
+  const fs = options.fs ?? nodeFileSystem
+  const planPath = join(planDir, 'plan.json')
+  const htmlPath = join(planDir, 'index.html')
+
+  const raw = await fs.readFile(planPath)
+  const original = JSON.parse(raw) as PlanData
+
+  const inputErrors = validatePlan(original)
+  if (inputErrors.length > 0) {
+    return {
+      planDir,
+      planPath,
+      htmlPath,
+      outcome: { status: 'refused', reasons: inputErrors, stage: 'request' },
+    }
+  }
+
+  let merged: PlanData
+  try {
+    merged = applyCuration(original, request)
+  } catch (err) {
+    if (err instanceof CurationRefusedError) {
+      return {
+        planDir,
+        planPath,
+        htmlPath,
+        outcome: { status: 'refused', reasons: err.reasons, stage: err.stage },
+      }
+    }
+    throw err
+  }
+
+  const verifyOpts: VerifyPlanOptions = {
+    ...options,
+    keepOutlierStoriesOnFailure: true,
+  }
+  // Filter verification to what changed. Swap-material on the url path also
+  // needs noSubstitution: a learner-supplied URL is admitted on its merits
+  // or refused, never silently swapped for another.
+  if (request.intent === 'swap-material' && 'url' in request.by) {
+    verifyOpts.noSubstitution = true
+    verifyOpts.sessionNumbers = [request.sessionNumber]
+    verifyOpts.materialUrls = [request.replacement.url]
+  } else if (request.intent === 'swap-material') {
+    verifyOpts.sessionNumbers = [request.sessionNumber]
+    verifyOpts.materialUrls = [request.replacement.url]
+  } else {
+    verifyOpts.sessionNumbers = [request.sessionNumber]
+  }
+
+  const { plan: verified, report } = await verifyPlan(merged, verifyOpts)
+
+  // On the swap-material url path, an unresolved-after-retries is a refusal,
+  // not a written-with-warning. Other intents keep the existing redo
+  // behaviour: a failed material is written with the warning.
+  if (
+    request.intent === 'swap-material' &&
+    'url' in request.by &&
+    report.outcomes.some((outcome) => outcome.status === 'unresolved-after-retries')
+  ) {
+    const failedUrl = request.replacement.url
+    return {
+      planDir,
+      planPath,
+      htmlPath,
+      outcome: {
+        status: 'refused',
+        stage: 'verification',
+        reasons: [`<${failedUrl}> could not be verified: unresolved-after-retries`],
+      },
+    }
+  }
+
+  const verifiedErrors = validatePlan(verified)
+  if (verifiedErrors.length > 0) {
+    return {
+      planDir,
+      planPath,
+      htmlPath,
+      outcome: { status: 'refused', reasons: verifiedErrors, stage: 'verification' },
+    }
+  }
+
+  const record = verified.curationLog?.[verified.curationLog.length - 1]
+  if (!record) {
+    // applyCuration should always append a record. If it didn't, refuse.
+    return {
+      planDir,
+      planPath,
+      htmlPath,
+      outcome: {
+        status: 'refused',
+        stage: 'request',
+        reasons: ['curation produced no log record; the request did not change the plan'],
+      },
+    }
+  }
+
+  await writeMaintenanceFiles(
+    fs,
+    planPath,
+    htmlPath,
+    JSON.stringify(verified, null, 2),
+    renderPlan(verified)
+  )
+
+  return {
+    planDir,
+    planPath,
+    htmlPath,
+    outcome: { status: 'applied', plan: verified, report, record },
+  }
+}
+
+/**
  * Redo mode: replace one named session in an existing plan directory, then
  * verify only that session's material URLs and re-render the page in place.
  *
@@ -167,9 +324,11 @@ export async function reverifyPlanDir(
  * metadata, stakes, phases, DISSS preamble and the entire plan shape ride
  * through untouched. The directory name is never suffixed.
  *
- * The write gate is strict: no file is written until the merged plan
- * validates before the network call, the verified merged plan validates
- * again, and the replacement's number matches the request.
+ * This is a thin wrapper over `curatePlanDir`: same signature, same
+ * behaviour, same `MaintenanceResult` shape the CLI and tests already use.
+ * A redo-session intent cannot refuse after verification (the existing
+ * behaviour writes an unverifiable material with a warning), so the wrapper
+ * asserts the outcome was applied and unwraps it into the legacy shape.
  *
  * The replacement is structured JSON supplied by the skill. The deterministic
  * shell never invents titles, artifacts, prose, or sources.
@@ -186,37 +345,27 @@ export async function redoSession(
         'the session number is what preserves browser progress and must not change'
     )
   }
-
-  const fs = options.fs ?? nodeFileSystem
-  const planPath = join(planDir, 'plan.json')
-  const htmlPath = join(planDir, 'index.html')
-
-  const raw = await fs.readFile(planPath)
-  const original = JSON.parse(raw) as PlanData
-
-  const inputErrors = validatePlan(original)
-  if (inputErrors.length > 0) throw new ValidationFailedError(inputErrors)
-
-  const merged: PlanData = {
-    ...original,
-    sessions: original.sessions.map((session) =>
-      session.number === sessionNumber ? replacement : session
-    ),
+  const at = options.now ? options.now() : new Date().toISOString()
+  const result = await curatePlanDir(
+    planDir,
+    { intent: 'redo-session', at, sessionNumber, replacement },
+    options
+  )
+  if (result.outcome.status === 'refused') {
+    // A redo-session refuses at request or merged-plan stage (applyCuration
+    // raises CurationRefusedError), not at verification. Surface the merged-
+    // plan failures as the same ValidationFailedError they used to be so the
+    // existing tests and CLI continue to see them.
+    if (result.outcome.stage === 'merged-plan') {
+      throw new ValidationFailedError(result.outcome.reasons)
+    }
+    throw new ValidationFailedError(result.outcome.reasons)
   }
-
-  const mergedErrors = validatePlan(merged)
-  if (mergedErrors.length > 0) throw new ValidationFailedError(mergedErrors)
-
-  const { plan: verified, report } = await verifyPlan(merged, {
-    ...options,
-    keepOutlierStoriesOnFailure: true,
-    sessionNumbers: [sessionNumber],
-  })
-
-  const verifiedErrors = validatePlan(verified)
-  if (verifiedErrors.length > 0) throw new ValidationFailedError(verifiedErrors)
-
-  await writeMaintenanceFiles(fs, planPath, htmlPath, JSON.stringify(verified, null, 2), renderPlan(verified))
-
-  return { planDir, planPath, htmlPath, plan: verified, report }
+  return {
+    planDir: result.planDir,
+    planPath: result.planPath,
+    htmlPath: result.htmlPath,
+    plan: result.outcome.plan,
+    report: result.outcome.report,
+  }
 }
