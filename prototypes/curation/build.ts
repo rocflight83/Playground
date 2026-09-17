@@ -16,7 +16,8 @@ const plan = JSON.parse(await readFile(planUrl, 'utf8')) as PlanData
 const css = await readFile(new URL('./prototype.css', here), 'utf8')
 const js = await readFile(new URL('./prototype.js', here), 'utf8')
 
-const planJson = JSON.stringify(plan).replace(/</g, '\u003c')
+// `<` becomes the six characters backslash-u003c, so `</script>` inside plan prose cannot end the tag.
+const planJson = JSON.stringify(plan).replace(/</g, String.fromCharCode(92) + 'u003c')
 const injection =
   '<style>' + css + '</style>' +
   '<script>window.__PROTO_PLAN__ = ' + planJson + ';</script>' +

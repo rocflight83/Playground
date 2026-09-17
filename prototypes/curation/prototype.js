@@ -242,7 +242,8 @@
   }
 
   // ------------------------------------------------------------------
-  // Base session markup (a port of renderer.ts's renderSession with hooks)
+  // Base session markup: a hand-port of renderer.ts's renderSession as of this
+  // commit, with hooks. It will drift from the renderer; that is fine here.
   // ------------------------------------------------------------------
   function baseSession(sess, hooks) {
     hooks = hooks || {}
@@ -332,7 +333,7 @@
     if (prev && prev.session !== Number(n)) renderOne(prev.session)
     renderOne(n)
     var sec = sectionOf(n)
-    if (sec) setOpen(sec, true)
+    if (sec && kind !== 'menu') setOpen(sec, true)
     var field = sec && sec.querySelector('.pc-panel textarea, .pc-panel input')
     if (field) field.focus()
   }
@@ -509,23 +510,21 @@
     },
     onAction: function (action, el) {
       var n = sessionNumberOf(el)
-      var result
       switch (action) {
         case 'a:drop': openPanel('drop', n); break
         case 'a:redo': openPanel('redo', n); break
         case 'a:swap': openPanel('swap', n, materialUrlOf(el)); break
         case 'a:drop:submit':
-          result = actions.drop(n, formValue(el, 'textarea')); closePanel(); break
+          actions.drop(n, formValue(el, 'textarea')); closePanel(); break
         case 'a:redo:submit':
-          result = actions.redo(n, formValue(el, 'input')); closePanel(); break
+          actions.redo(n, formValue(el, 'input')); closePanel(); break
         case 'a:swap:reason':
-          result = actions.swapByReason(n, ui.panel.url, el.getAttribute('data-reason')); closePanel(); break
+          actions.swapByReason(n, ui.panel.url, el.getAttribute('data-reason')); closePanel(); break
         case 'a:swap:url':
           var url = formValue(el, 'input')
           if (!url) return
-          result = actions.swapByUrl(n, ui.panel.url, url); closePanel(); break
+          actions.swapByUrl(n, ui.panel.url, url); closePanel(); break
       }
-      void result
     },
   }
 
@@ -597,7 +596,7 @@
           : pending.request.intent === 'drop-as-known' ? 'Dropping as known' : 'Re-planning'
         before = '<div class="pc-b-bar"><span class="pc-dot"></span>' + label + ' — ' + stageWord(pending.stage) + '</div>'
       }
-      var detailTop = refusals.map(function (r) { return refusalHtml(r) }).join('')
+      var detailTop = refusals.filter(function (r) { return !r.inModal }).map(function (r) { return refusalHtml(r) }).join('')
       var picking = panelIs('pick', n)
       if (picking) detailTop += '<div class="pc-b-pickhint">Pick the material to swap. <button type="button" class="pc-link" data-pc="cancel">Cancel</button></div>'
       return baseSession(sess, {
@@ -623,7 +622,9 @@
       var self = this
       switch (action) {
         case 'b:menu': panelIs('menu', n) ? closePanel() : openPanel('menu', n); break
-        case 'b:close': this.closeModal(); break
+        case 'b:close':
+          state.refused = state.refused.filter(function (r) { return !r.inModal })
+          this.closeModal(); renderState(); break
         case 'b:drop':
           closePanel()
           this.modal('<h3>Drop session ' + n + ' as already known?</h3>' +
@@ -664,7 +665,7 @@
             var box = self.modalRoot.querySelector('.pc-modal')
             var old = box.querySelector('.pc-refusal'); if (old) old.remove()
             box.insertAdjacentHTML('beforeend', refusalHtml(result, 'pc-refusal-small'))
-            state.refused = state.refused.filter(function (r) { return r.id !== result.id }) // shown in the modal, not the card
+            result.inModal = true // stays in state (the state panel shows it); the card does not draw it
             renderOne(n)
           } else this.closeModal()
           break
@@ -748,7 +749,7 @@
       var detailTop = ''
       if (records.length) {
         var last = records[records.length - 1]
-        detailTop += '<details class="pc-c-compare"' + (panelIs('compare', n) ? ' open' : '') + '><summary>Compare with the previous version (' +
+        detailTop += '<details class="pc-c-compare"><summary>Compare with the previous version (' +
           (last.intent === 'drop-as-known' ? 'dropped as known' : 're-planned') + ' ' + timeLabel(last.at) + ')</summary>' +
           '<div class="pc-c-cols"><div><div class="detail-label">Before</div>' + oldSessionHtml(last.replacedSession) + '</div>' +
           '<div><div class="detail-label">After</div>' + oldSessionHtml(sess) + '</div></div>' +
@@ -854,6 +855,8 @@
   statePanel.hidden = true
   document.body.appendChild(statePanel)
   function renderState() {
+    var toggle = document.getElementById('pc-state-toggle')
+    if (toggle) toggle.textContent = 'state · ' + state.inflight.length + ' pending · ' + state.refused.length + ' refused · ' + state.log.length + ' logged'
     if (statePanel.hidden) return
     var compact = {
       variant: current.key,

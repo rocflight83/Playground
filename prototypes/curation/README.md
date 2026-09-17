@@ -53,6 +53,22 @@ node --experimental-strip-types prototypes/curation/build.ts
 | After replacement | New content in place; a muted collapsible **"Previously: …"** fold at the top of the detail; materials show "Replaced · ~~was~~" | New content in place, a **Revised ×N** tag linking to a **Curation history** section at the bottom of the page where the old versions live | New content in place with a collapsible **Before / After** two-column comparison at the top of the detail |
 | Refusal | Inline under the material / at the top of the session detail | In the modal (request-stage) or at the top of the card (verification-stage) | In the tray |
 
+## Known gaps (deliberate, from review)
+
+- **Pending in A and B takes over the row / card** (dims it, disables clicks
+  until applied). #25 only fixes that the *plan* is untouched until applied —
+  which holds in all three — but the *page* being fully usable while pending
+  is C's bet alone. Judge the pending question with that in mind.
+- **Consolidation slots (6, 11)** hide or disable "drop as known" in every
+  variant, so the refusal text for that case is never shown; only a greyed
+  control with a tooltip.
+- **Budget refusal** (replacement doesn't fit the session's remaining
+  minutes) is not demonstrable: fabricated replacements always fit.
+- `knownSummary` is fabricated on the page from the learner's text; in the
+  real model the intelligence writes it.
+- The base page's *Import Progress* button is orphaned once the sessions are
+  re-rendered; don't test it here.
+
 ## How to answer
 
 Comment on #19 with the verdict per question (a variant letter, or "the X
