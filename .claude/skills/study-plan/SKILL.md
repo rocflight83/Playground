@@ -139,15 +139,26 @@ At most **one paid material in the whole plan**, with its `price` set, and
 every session must remain completable from free materials alone. Both enforced.
 
 Group the sessions into phases. For each phase, look for a real, named person
-or documented case that reached the skill through an unusual route. Prefer a
-subject-specific source; use a general documented case only when no
-subject-specific example is available. Record the unusual approach and the
-transferable principle explaining why it worked as separate fields. Put at
-most one `outlierStory` on a phase, at the phase boundary. Add it only when
-its citation is a working URL that will pass the generator's verification.
-**No such source means omit `outlierStory` entirely** — never invent a story,
-use a composite, or fill the gap with a placeholder. The skill writes plan
-data only; it never writes HTML.
+or documented case that reached the skill through an unusual route,
+**specific to the plan's subject domain and recognisably about a high-frequency
+unit drilled in this phase**. A general-legend fallback (a famous practitioner
+whose contribution is at one remove from the subject — Thorp, Dalio, Simons,
+Soros for an options-system plan) is not subject-specific and must be omitted,
+not used. Diagnostic: would a reader who knows the subject recognise this
+person as being in this subject, **and** would the transferable principle map
+cleanly onto one of the phase's `highFrequencyUnits`? Both must hold. Record
+the unusual approach and the transferable principle that explains why it worked
+as separate fields. At most one `outlierStory` per phase, at the phase
+boundary. Add the story only when its citation is a working URL that will pass
+the generator's verification. If a search returns only general-legend
+candidates, or none whose approach aligns with the phase's high-frequency units,
+omit `outlierStory` entirely — never invent a story, use a composite, fall back
+to a general legend, or fill the gap yourself. The generator renders a quiet
+"No subject-specific outlier case found for this phase" note at the phase
+boundary. Do at least one real search per phase; do not skip later phases
+because an early one yielded nothing.
+
+The skill writes plan data only, never HTML. The renderer emits the placeholder.
 
 Leave `stakes` as an empty string. It is the learner's to fill in on the page.
 

@@ -205,18 +205,90 @@ describe('the page reads as a study plan', () => {
     expect(citationLink?.textContent).toBe(phaseStory.citation)
   })
 
-  it('omits a phase story and its placeholder when outlierStory is absent', () => {
+  it('renders a muted placeholder at the phase boundary when the story is absent', () => {
     const plan = clonePlan(fixturePlan)
+    // Copy phase 0's story onto the other two phases so we can delete phase 1's
+    // and confirm only that one becomes a placeholder.
+    const seed = plan.phases[0].outlierStory!
+    for (let i = 1; i < plan.phases.length; i++) {
+      plan.phases[i].outlierStory = { ...seed }
+    }
     delete plan.phases[1].outlierStory
     const doc = structure(renderPlan(plan))
 
-    expect(doc.querySelectorAll('.outlier-story')).toHaveLength(1)
+    // Three phases: phase 0 keeps its real story, phase 1 becomes the
+    // placeholder, phase 2 keeps its copy. Three .outlier-story nodes total.
+    expect(doc.querySelectorAll('.outlier-story')).toHaveLength(3)
+    const placeholders = doc.querySelectorAll('.outlier-story--empty')
+    expect(placeholders).toHaveLength(1)
+
     const applicationBand = Array.from(doc.querySelectorAll('.phase-band')).find((band) =>
       band.textContent?.includes('Application')
     )
-    expect(applicationBand?.nextElementSibling?.classList.contains('session')).toBe(true)
-    expect(applicationBand?.nextElementSibling?.getAttribute('data-session')).toBe('7')
-    expect(doc.body.textContent).not.toContain('No outlier story')
+    const placeholder = applicationBand?.nextElementSibling
+    expect(placeholder?.classList.contains('outlier-story')).toBe(true)
+    expect(placeholder?.classList.contains('outlier-story--empty')).toBe(true)
+    // The placeholder sits between the band and the first session of the phase.
+    expect(placeholder?.nextElementSibling?.classList.contains('session')).toBe(true)
+    expect(placeholder?.nextElementSibling?.getAttribute('data-session')).toBe('7')
+  })
+
+  it('renders the empty placeholder as a single muted <p> with no heading or link', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    // Phases 1 and 2 carry no story in the fixture, so two placeholders exist.
+    const placeholders = Array.from(doc.querySelectorAll('.outlier-story--empty'))
+    expect(placeholders.length).toBeGreaterThan(0)
+    for (const placeholder of placeholders) {
+      expect(placeholder.querySelector('h3')).toBeNull()
+      expect(placeholder.querySelector('a')).toBeNull()
+      expect(placeholder.children).toHaveLength(1)
+      expect(placeholder.firstElementChild?.tagName).toBe('P')
+    }
+  })
+
+  it('says plainly that no subject-specific outlier case was found', () => {
+    const doc = structure(renderPlan(fixturePlan))
+    const placeholders = Array.from(doc.querySelectorAll('.outlier-story--empty'))
+    expect(placeholders.length).toBeGreaterThan(0)
+    for (const placeholder of placeholders) {
+      const text = (placeholder.textContent ?? '').toLowerCase()
+      expect(text).toContain('no ')
+      expect(text).toContain('subject-specific')
+      expect(text).toContain('outlier')
+      expect(text).toContain('case')
+    }
+  })
+
+  it('renders one .outlier-story node per phase and no placeholder when every phase has a story', () => {
+    const plan = clonePlan(fixturePlan)
+    const seed = plan.phases[0].outlierStory!
+    for (let i = 1; i < plan.phases.length; i++) {
+      plan.phases[i].outlierStory = { ...seed }
+    }
+    const doc = structure(renderPlan(plan))
+
+    expect(doc.querySelectorAll('.outlier-story')).toHaveLength(plan.phases.length)
+    expect(doc.querySelectorAll('.outlier-story--empty')).toHaveLength(0)
+  })
+
+  it('renders the placeholder at the very first phase boundary when phase 0 has no story', () => {
+    const plan = clonePlan(fixturePlan)
+    delete plan.phases[0].outlierStory
+    const doc = structure(renderPlan(plan))
+
+    const main = doc.querySelector('.page')!
+    const sequence: string[] = []
+    for (const el of Array.from(main.children)) {
+      if (el.classList.contains('phase-band')) {
+        sequence.push(`band:${el.querySelector('.phase-title')?.textContent ?? ''}`)
+      } else if (el.classList.contains('outlier-story')) {
+        sequence.push(el.classList.contains('outlier-story--empty') ? 'placeholder' : 'story')
+      } else if (el.classList.contains('session')) {
+        sequence.push(`session:${el.getAttribute('data-session')}`)
+      }
+    }
+
+    expect(sequence.slice(0, 3)).toEqual(['band:Fundamentals', 'placeholder', 'session:1'])
   })
 
   it('escapes every outlier story value, including the citation href and link text', () => {

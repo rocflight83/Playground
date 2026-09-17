@@ -250,6 +250,16 @@ h1 {
 .phase-title { color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .phase-meta { text-align: right; }
 
+.outlier-story--empty {
+  margin: 0 0 12px;
+  padding: 10px 14px 10px 14px;
+  border-top: 1px solid var(--paper-line);
+  color: var(--ink-faint);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.outlier-story--empty p { margin: 0; }
+
 .session {
   margin: 0 0 8px 44px;
   border: 1px solid var(--paper-line);
@@ -768,6 +778,18 @@ function renderOutlierStory(story: OutlierStory): string {
   )
 }
 
+const EMPTY_OUTLIER_STORY_TEXT = 'No subject-specific outlier case found for this phase.'
+
+function renderEmptyOutlierStory(): string {
+  return (
+    '<div class="outlier-story outlier-story--empty">' +
+    '<p>' +
+    esc(EMPTY_OUTLIER_STORY_TEXT) +
+    '</p>' +
+    '</div>'
+  )
+}
+
 export function renderPlan(plan: PlanData): string {
   const rendered = new Set<number>()
   let sessionsHtml = ''
@@ -775,6 +797,8 @@ export function renderPlan(plan: PlanData): string {
     sessionsHtml += renderPhaseBand(phase, index)
     if (phase.outlierStory) {
       sessionsHtml += renderOutlierStory(phase.outlierStory)
+    } else {
+      sessionsHtml += renderEmptyOutlierStory()
     }
     for (const number of phase.sessions) {
       const session = plan.sessions.find((candidate) => candidate.number === number)
