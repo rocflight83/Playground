@@ -1,7 +1,7 @@
 export interface Material {
   title: string
   url: string
-  sourceType: 'preferred' | 'off-list'
+  sourceType: 'preferred' | 'practitioner' | 'off-list'
   estimatedDuration: number
   paid: boolean
   price?: number
@@ -98,3 +98,15 @@ export function consolidationSlotsDescription(): string {
  * effective units recur across sessions rather than being touched once.
  */
 export const MIN_REPEATED_UNIT_SESSIONS = 3
+
+/**
+ * The maximum number of distinct URLs any single publisher may supply to a
+ * plan. Enforced by `validatePlan`. The publisher is the registrable domain
+ * (see `publisherKey` in `src/publisher.ts`); video hosts whose URL does not
+ * name the channel return `null` and are skipped.
+ *
+ * `.claude/skills/study-plan/SKILL.md` states this policy in prose, because a
+ * prompt cannot import a constant. Change either of the policy constants here
+ * and that file needs the same edit.
+ */
+export const MAX_URLS_PER_PUBLISHER = 4

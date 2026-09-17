@@ -117,8 +117,17 @@ describe('reverifyPlanDir', () => {
 
     await seedPlanDir(planDir, plan, fs)
 
+    // Issue 12: practitioner materials require content verification. Echo
+    // each non-dead material's own title in the body so the page passes the
+    // concept check and the only unresolved slot is the one we deliberately
+    // broke.
+    const materialByUrl = new Map(plan.sessions.flatMap((s) => s.materials.map((m) => [m.url, m])))
     const fetchImpl: FetchLike = async (url) => {
       if (url === deadUrl) return notFoundResponse()
+      const material = materialByUrl.get(url)
+      if (material && material.sourceType !== 'preferred') {
+        return okResponse(`${material.title}. A practitioner treatment with worked examples and tradeoffs.`)
+      }
       return okResponse()
     }
     const searchReplacement: () => Promise<ReplacementCandidate | null> = async () => null
@@ -165,8 +174,19 @@ describe('reverifyPlanDir', () => {
     }
     await seedPlanDir(planDir, plan, fs)
 
+    // Issue 12: practitioner materials require content verification. Echo
+    // each material's own title in the body so the page passes.
+    const materialByUrl = new Map(plan.sessions.flatMap((s) => s.materials.map((m) => [m.url, m])))
+    const fetchImpl: FetchLike = async (url) => {
+      const material = materialByUrl.get(url)
+      if (material && material.sourceType !== 'preferred') {
+        return okResponse(`${material.title}. A practitioner treatment with worked examples and tradeoffs.`)
+      }
+      return okResponse()
+    }
+
     const result = await reverifyPlanDir(planDir, {
-      fetch: baseFetch,
+      fetch: fetchImpl,
       searchReplacement: noReplacement,
       anchorUrls: [],
       now: fixedClock,
@@ -425,9 +445,9 @@ function replacementSession3(): Session {
         verification: { status: 'verified-by-status', checkedAt: '2025-01-01T00:00:00.000Z' },
       },
       {
-        title: 'Python Modules and Packages - Imports',
-        url: 'https://docs.python.org/3/tutorial/modules.html',
-        sourceType: 'preferred',
+        title: 'Doug Hellmann - PyMOTW: Modules and Imports',
+        url: 'https://pymotw.com/3/modules.html',
+        sourceType: 'practitioner',
         estimatedDuration: 20,
         paid: false,
         verification: { status: 'verified-by-content', checkedAt: '2025-01-01T00:00:00.000Z' },
@@ -449,8 +469,19 @@ describe('redoSession', () => {
     const originalJson = fs.read(join(planDir, 'plan.json'))
 
     const replacement = replacementSession3()
+    // Issue 12: practitioner materials require content verification. Echo
+    // each replacement material's own title in the body so the page passes.
+    const replacementByUrl = new Map(replacement.materials.map((m) => [m.url, m]))
+    const fetchImpl: FetchLike = async (url) => {
+      const material = replacementByUrl.get(url)
+      if (material && material.sourceType !== 'preferred') {
+        return okResponse(`${material.title}. A practitioner treatment with worked examples and tradeoffs.`)
+      }
+      return okResponse()
+    }
+
     const result = await redoSession(planDir, 3, replacement, {
-      fetch: baseFetch,
+      fetch: fetchImpl,
       searchReplacement: noReplacement,
       now: laterClock,
       fs,
@@ -512,12 +543,19 @@ describe('redoSession', () => {
     const plan = clonePlan(fixturePlan)
     await seedPlanDir(planDir, plan, fs)
 
+    const replacement = replacementSession3()
     const seenUrls: string[] = []
+    // Issue 12: practitioner materials require content verification. Echo
+    // each replacement material's own title in the body so the page passes.
+    const replacementByUrl = new Map(replacement.materials.map((m) => [m.url, m]))
     const fetchImpl: FetchLike = async (url) => {
       seenUrls.push(url)
+      const material = replacementByUrl.get(url)
+      if (material && material.sourceType !== 'preferred') {
+        return okResponse(`${material.title}. A practitioner treatment with worked examples and tradeoffs.`)
+      }
       return okResponse()
     }
-    const replacement = replacementSession3()
     const result = await redoSession(planDir, 3, replacement, {
       fetch: fetchImpl,
       searchReplacement: noReplacement,

@@ -275,12 +275,13 @@ describe('end-to-end demo: a well-served subject produces a usable site', () => 
 
     const written = JSON.parse(await readFile(result.planPath, 'utf8')) as PlanData
 
-    // Demo: durable-tier only. Python's docs.python.org is the canonical
-    // preferred-tier source; this run should not have discovered any
-    // off-list fallbacks.
+    // Demo: no off-list fallbacks discovered. The fixture still has both
+    // preferred and practitioner materials (issue 12: the practitioner tier
+    // is first-class), but no material needed to be admitted off-list
+    // because Python is well-served by the durable tier.
     for (const session of written.sessions) {
       for (const material of session.materials) {
-        expect(material.sourceType).toBe('preferred')
+        expect(material.sourceType).not.toBe('off-list')
       }
     }
 

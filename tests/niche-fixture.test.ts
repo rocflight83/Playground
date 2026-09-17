@@ -32,6 +32,15 @@ describe('issue 05: niche fixture exercises off-list admission', () => {
     expect(sourceTypes.has('off-list')).toBe(true)
   })
 
+  it('carries at least one practitioner material (issue 12: the practitioner tier is first-class, and the niche fixture exercises it)', () => {
+    const all = nicheFixturePlan.sessions.flatMap((s) => s.materials)
+    expect(all.some((m) => m.sourceType === 'practitioner')).toBe(true)
+  })
+
+  it('passes the per-publisher cap (issue 12: no publisher dominates)', () => {
+    expect(validatePlan(nicheFixturePlan)).toEqual([])
+  })
+
   it('keeps the gate ticket 04 installed: at most one paid material and a free path through every session', () => {
     const all = nicheFixturePlan.sessions.flatMap((s) => s.materials)
     const paid = all.filter((m) => m.paid)

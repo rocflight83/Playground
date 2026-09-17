@@ -78,7 +78,11 @@ export interface VerificationReport {
 }
 
 function requiresContentCheck(sourceType: Material['sourceType'], isAnchor: boolean): boolean {
-  return sourceType === 'off-list' || isAnchor
+  // The content bar applies to every non-preferred tier: a status-only
+  // pass never suffices for an off-list or practitioner material, and
+  // anchors — which a session leans on most heavily — content-check
+  // regardless of tier.
+  return sourceType !== 'preferred' || isAnchor
 }
 
 function pageCoversConcept(text: string, concept: string): boolean {

@@ -1,6 +1,7 @@
 import { JSDOM } from 'jsdom'
 import type { PlanData } from '../src/plan-types'
 import { renderPlan } from '../src/renderer'
+import { validatePlan } from '../src/validation'
 import { fixturePlan } from './fixtures/plan-fixture'
 
 function clonePlan(plan: PlanData): PlanData {
@@ -66,7 +67,7 @@ describe('fixture plan exercises every part of the data model', () => {
     const allMaterials = fixturePlan.sessions.flatMap((s) => s.materials)
     for (const m of allMaterials) {
       expect(m.estimatedDuration).toBeGreaterThan(0)
-      expect(['preferred', 'off-list']).toContain(m.sourceType)
+      expect(['preferred', 'practitioner', 'off-list']).toContain(m.sourceType)
       expect(m.verification.status).toBeTruthy()
     }
     const statuses = new Set(allMaterials.map((m) => m.verification.status))
@@ -77,6 +78,10 @@ describe('fixture plan exercises every part of the data model', () => {
     const paid = allMaterials.filter((m) => m.paid)
     expect(paid.length).toBe(1)
     expect(paid[0].price).toBeGreaterThan(0)
+    // Issue 12: the practitioner tier is exercised end-to-end in the fixture
+    // and the gate (per-publisher cap) does not refuse it.
+    expect(allMaterials.some((m) => m.sourceType === 'practitioner')).toBe(true)
+    expect(validatePlan(fixturePlan)).toEqual([])
   })
 
   it('keeps every session completable with a free path and records an outlier story with a citation', () => {

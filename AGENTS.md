@@ -19,7 +19,15 @@ adds per-session redo mode: a session-numbers filter on `verifyPlan` plus
 `redoSession` in `src/maintenance.ts` and `npm run redo` so one named
 session can be replaced in place while the other thirteen, browser
 progress, and the directory name all survive untouched (see
-`.scratch/study-plan-generator/`).
+`.scratch/study-plan-generator/`). Ticket 12 adds source breadth:
+`src/publisher.ts` (a pure `publisherKey(url)` that maps a material URL
+to its publisher — registrable domain with hosting-platform tenant
+awareness, returning `null` for video hosts whose URL does not name the
+channel) plus a per-publisher cap (`MAX_URLS_PER_PUBLISHER = 4`,
+distinct URLs after normalization, enforced by `validatePlan`) and a
+sanctioned `practitioner` tier (named practitioner's own talk, video
+lecture or series, blog post, podcast episode, or book — content-verified
+like off-list) that discovery reaches deliberately, every phase.
 
 ## Build and test commands
 
@@ -87,10 +95,20 @@ be followed downstream):
   which error messages and docs derive from rather than restate.
 - `src/renderer.ts` — Seam 1: `renderPlan(plan): string`.
 - `src/slug.ts` — `slugify(subject): string` for naming each plan's directory.
+- `src/publisher.ts` — `publisherKey(url): string | null`, a pure function
+  that maps a material URL to the publisher the per-publisher cap counts.
+  Reduces subdomains to the registrable domain (`cdn.cboe.com` =
+  `www.cboe.com`), names the tenant on multi-tenant hosting platforms
+  (`ranaroussi.github.io`, `github.com/vollib`), and returns `null` for video
+  hosts whose URL does not identify the channel (YouTube, Vimeo). Also
+  exports `isForumHost(url)` for the practitioner-tier forum tripwire.
 - `src/validation.ts` — `validatePlan(plan): string[]`. Every error is
   reported, not just the first. This is the boundary where generated or
   hand-edited JSON becomes trusted data, so its runtime type checks are
-  load-bearing rather than redundant with the `PlanData` type.
+  load-bearing rather than redundant with the `PlanData` type. Enforces the
+  per-publisher cap (`MAX_URLS_PER_PUBLISHER = 4`, one error per offending
+  publisher, sessions listed ascending and deduped) and rejects practitioner
+  tier on known forum hosts.
 - `src/verification.ts` — Seam 2: `verifyPlan(plan, { fetch, searchReplacement, anchorUrls?, now?, keepOutlierStoriesOnFailure?, sessionNumbers? })`.
   Returns a new plan with refreshed verification records plus a report.
   Replaces failed links via `searchReplacement` up to two attempts per
@@ -101,7 +119,10 @@ be followed downstream):
   rather than silently removed, so rot is visible on the page. When
   `sessionNumbers` is set, only those sessions' materials are fetched and
   re-timestamped; other session objects (and outlier-story citations) pass
-  through unchanged, which is what single-session redo relies on.
+  through unchanged, which is what single-session redo relies on. Content
+  verification (fetch the body, confirm it covers the claimed concept)
+  applies to every non-`preferred` material and to every anchor — i.e.
+  `sourceType !== 'preferred' || isAnchor`.
 - `src/generate.ts` — `generatePlan(plan, baseDir, { fetch, searchReplacement, now?, fs? })`.
   Validates, verifies, then writes `plan.json` and `index.html` into
   `baseDir/<slug>/`, falling back to `<slug>-2`, `-3`, … when that directory

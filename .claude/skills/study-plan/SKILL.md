@@ -120,20 +120,68 @@ are not. Write the artifact and self-check so both readings work.
 
 ### 4. Source the materials
 
-Discovery is tiered. **Start from the preferred tier** — see
-[Preferred sources](#preferred-sources) — and only reach off-list when an
-off-list resource is genuinely the best available for what the session needs.
-A subject well served by the preferred tier should stay there. A niche subject
-where no preferred-tier source covers a needed concept gets off-list fallbacks
-rather than a thin plan.
+Discovery is two-lane, every phase, run deliberately rather than as a fallback.
+**Lane A** is the canonical lane (the preferred tier — see
+[Preferred sources](#preferred-sources)) for what a unit **is**: the
+definition, the API, the spec. **Lane B** is the practitioner lane (see
+[Practitioner sources](#practitioner-sources)) for how a unit is **done**:
+a named practitioner's own recorded talk, video lecture or series, blog post,
+podcast episode, or book. Every phase gets at least one Lane B search before
+its materials are written, on the phase's `highFrequencyUnits`, whether or
+not Lane A already covers them. A subject where Lane A fully covers a unit is
+still paired with a Lane B take when the session's artifact benefits from a
+worked example, a walkthrough, or a judgement call the canonical page does not
+make (the manual says what `cross_validate` does; a practitioner shows why
+walk-forward splits are the only honest choice for a trading backtest).
 
-Off-list sources carry a higher bar: the page is fetched and the body
-**confirmed to cover the claimed concept** before the resource enters the
-plan. A status-only pass never suffices for an off-list source — verification
-rejects it as `unresolved-after-retries`. The plan's three-to-five anchor
-resources (the materials the plan leans on most) are content-verified
-**regardless of tier**, so a preferred-tier anchor is held to the same
-standard.
+Tier the resulting material:
+
+- **`preferred`** — Lane A: canonical page for the unit. See
+  [Preferred sources](#preferred-sources).
+- **`practitioner`** — Lane B: a named practitioner's own material on how the
+  unit is done. See [Practitioner sources](#practitioner-sources). Books
+  enter through their publisher's or author's page, which carries the blurb
+  verification reads.
+- **`off-list`** — a niche resource genuinely the best available for what the
+  session needs, neither canonical nor a practitioner's own take. Reach this
+  tier deliberately, only when neither Lane A nor Lane B covers the unit well
+  enough.
+
+A subject well served by the preferred tier still pairs at least one Lane B
+material per phase; a niche subject where Lane A and Lane B both fall short
+gets off-list fallbacks rather than a thin plan. Off-list is reached
+**deliberately** for niche units, not by default.
+
+Verification is the bar: every non-`preferred` material (practitioner **and**
+off-list) has its page fetched and the body **confirmed to cover the claimed
+concept** before the resource enters the plan — same `pageCoversConcept` test,
+same retries, same `unresolved-after-retries` outcome. A status-only pass never
+suffices for either tier. The plan's three-to-five anchor resources (the
+materials the plan leans on most) are content-verified **regardless of tier**,
+so a preferred-tier anchor is held to the same standard.
+
+**Per-publisher cap: at most 4 distinct URLs per publisher in the whole plan,
+where a publisher is the registrable domain (`cdn.cboe.com` and `www.cboe.com`
+are one) or, on hosting platforms, the tenant (`ranaroussi.github.io`,
+`github.com/vollib`); enforced by validation.** Keep a running tally of
+distinct URLs per publisher as you write each session. When the running count
+hits 4 for a publisher, the next material from that publisher is replaced: Lane
+B first, then off-list, then a different preferred publisher. If nothing else
+covers the unit, the session keeps fewer materials — never a padding link.
+**A video-host URL (`youtube.com`, `youtu.be`, `vimeo.com`) does not name the
+channel behind the video**, so the cap cannot see it. Apply the same
+"at most 4 per publisher" rule to a YouTube channel by hand: if you find
+yourself queuing six videos from the same channel, pick another. Distinct URLs
+are counted after normalization (lowercase scheme + host, fragment removed,
+trailing slash removed, query kept), so a page reused for spaced review in a
+later session does not eat the publisher's budget. Outlier-story citations are
+phase-level metadata, not materials, and are not counted.
+
+**Forum tripwire**: a forum thread is never practitioner-tier. Reddit, Stack
+Overflow / Stack Exchange, Hacker News, Quora, Discourse instances, mailing-list
+archives — all excluded from the practitioner tier by `validatePlan`. They may
+still be admitted off-list under the existing rules when they are genuinely
+the best available. The exclusion lives in the validator, not in your head.
 
 At most **one paid material in the whole plan**, with its `price` set, and
 every session must remain completable from free materials alone. Both enforced.
@@ -305,3 +353,44 @@ Durable, well-known, unlikely to rot inside a two-week sprint:
 - Established technical publishers' freely readable material.
 
 Prefer a canonical page over a blog post restating it.
+
+## Practitioner sources
+
+A practitioner material is one where a **named practitioner** — a person who
+did the thing and is explaining how — is speaking in their own voice. A
+practitioner's own recorded talk, video lecture or series, blog post, podcast
+episode, or book (the book's blurb enters through the publisher or author
+page). The person matters: a practitioner tier is not "a good tutorial on
+topic X", it is the person who did the work telling you how. Forum threads
+(Reddit, Stack Overflow / Stack Exchange, Hacker News, Quora, Discourse
+instances, mailing-list archives) are never practitioner-tier — they may
+still be admitted off-list when genuinely the best. Aggregator listicles,
+anonymous tutorials, and content farms are never practitioner-tier either.
+
+What qualifies:
+
+- A practitioner's own recorded talk or conference presentation, on their own
+  site, a conference site, or YouTube (a video's watch page is what verification
+  fetches; transcripts are not fetched).
+- A practitioner's own video lecture series.
+- A practitioner's own blog post.
+- A practitioner's own podcast episode.
+- A book by the practitioner, entered through the publisher's or author's page.
+
+What does not qualify:
+
+- Forum threads — always off-list at best, never practitioner.
+- Aggregator listicles and content farms.
+- Anonymous tutorials.
+- A second-hand summary of the practitioner's work (a news write-up of a
+  practitioner's results, an explainer that quotes them).
+
+Planning-time duty for video practitioner sources: before admitting a video,
+confirm from the transcript, chapters, or description that the video
+**actually covers the unit** (not just its title), and set `estimatedDuration`
+to the runtime (consumption time — how long one watch takes). Verification
+fetches the watch page (title, description, embedded player JSON) and confirms
+it covers the concept, so a title-only match is not enough; a watch page that
+returns a consent or bot interstitial fails the content check the same way any
+other page does, and surfaces as `unresolved-after-retries` with the existing
+warning.

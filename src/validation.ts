@@ -1,14 +1,34 @@
-import type { PlanData } from './plan-types.ts'
+import type { Material, PlanData } from './plan-types.ts'
 import {
   CONSOLIDATION_SLOTS,
+  MAX_URLS_PER_PUBLISHER,
   MIN_REPEATED_UNIT_SESSIONS,
   consolidationSlotsDescription,
 } from './plan-types.ts'
+import { isForumHost, publisherKey } from './publisher.ts'
 
 export type ValidationError = string
 
 function require_(errors: ValidationError[], value: unknown, message: string): void {
   if (!value) errors.push(message)
+}
+
+/**
+ * Reduce a material URL to the form the per-publisher cap counts as one
+ * resource: lowercase scheme and host, fragment removed, trailing slash
+ * removed, query kept (it distinguishes pages on some hosts).
+ */
+function normalizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.toLowerCase()
+    let path = parsed.pathname
+    if (path.endsWith('/')) path = path.slice(0, -1)
+    const query = parsed.search
+    return `${parsed.protocol.toLowerCase()}//${host}${path}${query}`
+  } catch {
+    return url
+  }
 }
 
 /**
@@ -122,14 +142,28 @@ export function validatePlan(plan: PlanData): ValidationError[] {
         errors.push(`session ${session.number} paid material must have a positive price`)
       }
       require_(errors, material.verification, `session ${session.number} material verification is required`)
-      // Sourcing is tiered: discovery prefers the durable tier, and off-list
-      // sources are admitted only when they are genuinely the best available.
-      // Verification — not the gate — enforces the off-list bar: a status-only
-      // pass never suffices for one; the page has to be fetched and confirmed
-      // to cover the claimed concept.
-      if (material.sourceType !== 'preferred' && material.sourceType !== 'off-list') {
+      // Sourcing is tiered: discovery prefers the durable tier (preferred),
+      // reaches the practitioner tier deliberately, and admits off-list only
+      // when genuinely the best available. Verification — not the gate —
+      // enforces the off-list bar: a status-only pass never suffices for one;
+      // the page has to be fetched and confirmed to cover the claimed concept.
+      // The practitioner tier carries the same content-verification bar.
+      if (
+        material.sourceType !== 'preferred' &&
+        material.sourceType !== 'practitioner' &&
+        material.sourceType !== 'off-list'
+      ) {
         errors.push(
-          `session ${session.number} material sourceType must be 'preferred' or 'off-list', found '${material.sourceType}'`
+          `session ${session.number} material sourceType must be 'preferred', 'practitioner', or 'off-list', found '${material.sourceType}'`
+        )
+      }
+      // Forum tripwire: a forum thread cannot be admitted under the
+      // practitioner tier. It is the named practitioner speaking in their own
+      // voice that justifies the tier; a thread of replies is not. Such
+      // resources are still admissible as off-list when genuinely the best.
+      if (material.sourceType === 'practitioner' && isForumHost(material.url)) {
+        errors.push(
+          `session ${session.number} material '${material.title}' is a forum thread and cannot be practitioner-tier; use 'off-list' if it is genuinely the best source`
         )
       }
     }
@@ -212,6 +246,37 @@ export function validatePlan(plan: PlanData): ValidationError[] {
   const paidMaterials = allMaterials.filter((m) => m.paid)
   if (paidMaterials.length > 1) {
     errors.push(`plan must have at most one paid material, found ${paidMaterials.length}`)
+  }
+
+  // Per-publisher cap: at most MAX_URLS_PER_PUBLISHER distinct URLs from any
+  // one publisher across the whole plan. The publisher is the registrable
+  // domain (see `publisherKey`); video hosts whose URL does not name the
+  // channel return null and are skipped. Distinct URLs are compared after
+  // normalization (lowercase scheme + host, no fragment, no trailing slash,
+  // query kept) so a page reused for spaced review in a later session does
+  // not eat the publisher's budget. Outlier-story citations are phase-level
+  // metadata, not materials, and are not counted.
+  const publisherCounts = new Map<string, { distinctUrls: Set<string>; sessions: Set<number> }>()
+  for (const material of allMaterials) {
+    const key = publisherKey(material.url)
+    if (key === null) continue
+    const sessionNumber = sessions.find((s) => s.materials.includes(material as Material))?.number
+    if (sessionNumber === undefined) continue
+    const normalized = normalizeUrl(material.url)
+    const entry = publisherCounts.get(key) ?? { distinctUrls: new Set(), sessions: new Set() }
+    entry.distinctUrls.add(normalized)
+    entry.sessions.add(sessionNumber)
+    publisherCounts.set(key, entry)
+  }
+  const sortedKeys = [...publisherCounts.keys()].sort()
+  for (const key of sortedKeys) {
+    const { distinctUrls, sessions: sessionNumbers } = publisherCounts.get(key)!
+    if (distinctUrls.size > MAX_URLS_PER_PUBLISHER) {
+      const sessionList = [...sessionNumbers].sort((a, b) => a - b).join(', ')
+      errors.push(
+        `plan draws ${distinctUrls.size} distinct URLs from publisher '${key}' (sessions ${sessionList}); at most ${MAX_URLS_PER_PUBLISHER} per plan are allowed`
+      )
+    }
   }
 
   const sessionsPerUnit = new Map<string, number>()

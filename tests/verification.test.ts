@@ -209,6 +209,62 @@ describe('verifyPlan', () => {
     })
   })
 
+  it('content-verifies a non-anchor practitioner material whose body covers the claimed concept', async () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    plan.sessions[0].materials = [plan.sessions[0].materials[0]]
+    plan.sessions[0].materials[0].sourceType = 'practitioner'
+    plan.sessions[0].materials[0].title = 'Argparse Guide'
+
+    const { plan: passing } = await verifyPlan(plan, {
+      fetch: async () => ok('A guide to using argparse for command-line tools.'),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+    expect(passing.sessions[0].materials[0].verification.status).toBe('verified-by-content')
+
+    const { plan: failing, report } = await verifyPlan(plan, {
+      fetch: async () => ok('This page is about gardening and has nothing to do with the topic.'),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+    expect(failing.sessions[0].materials[0].verification.status).toBe('unresolved-after-retries')
+    expect(report.unresolvedCount).toBe(1)
+  })
+
+  it('rejects a practitioner material whose fetch returns 200 with an empty body (issue 12: status-only is not enough)', async () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    plan.sessions[0].materials = [plan.sessions[0].materials[0]]
+    plan.sessions[0].materials[0].sourceType = 'practitioner'
+    plan.sessions[0].materials[0].title = 'Argparse Guide'
+
+    const { plan: result } = await verifyPlan(plan, {
+      fetch: async () => ok(''),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+    expect(result.sessions[0].materials[0].verification.status).toBe('unresolved-after-retries')
+  })
+
+  it('a non-anchor preferred material is still verified-by-status (issue 12: only off-list and practitioner escalate)', async () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions = [plan.sessions[0]]
+    plan.sessions[0].materials = [plan.sessions[0].materials[0]]
+    plan.sessions[0].materials[0].sourceType = 'preferred'
+
+    const { plan: result } = await verifyPlan(plan, {
+      fetch: async () => ok('A page with no relation to argparse at all.'),
+      searchReplacement: noReplacement,
+      anchorUrls: [],
+      now: fixedClock,
+    })
+    expect(result.sessions[0].materials[0].verification.status).toBe('verified-by-status')
+  })
+
   it('distinguishes all four verification outcomes, each with a timestamp policy', async () => {
     const plan = clonePlan(fixturePlan)
     plan.sessions = plan.sessions.slice(0, 1)
@@ -379,10 +435,19 @@ describe('verifyPlan', () => {
       }
     }
     // Snapshot every session's material URLs plus the chosen session number so
-    // we can detect that the wrong session got fetched.
+    // we can detect that the wrong session got fetched. The body returned for
+    // session 3's materials echoes each material's own title so content-checking
+    // practitioner materials in the fixture passes (issue 12: non-preferred
+    // materials now require a content pass).
+    const session3Urls = new Set(plan.sessions.find((s) => s.number === 3)!.materials.map((m) => m.url))
+    const session3ByUrl = new Map(plan.sessions.find((s) => s.number === 3)!.materials.map((m) => [m.url, m]))
     const fetchedUrls: string[] = []
     const fetchImpl = async (url: string): Promise<FetchResponse> => {
       fetchedUrls.push(url)
+      if (session3Urls.has(url)) {
+        const material = session3ByUrl.get(url)!
+        return ok(`${material.title}. A practitioner treatment with worked examples and tradeoffs.`)
+      }
       return ok()
     }
 
@@ -406,9 +471,12 @@ describe('verifyPlan', () => {
       }
     }
 
-    // Session 3's verification records refresh to the new timestamp.
+    // Session 3's verification records refresh to the new timestamp. The
+    // fixture's session 3 carries a practitioner material, which is
+    // content-verified under issue 12 — so its status is
+    // `verified-by-content`, not `verified-by-status`.
     for (const material of result.sessions.find((session) => session.number === 3)!.materials) {
-      expect(material.verification).toEqual({ status: 'verified-by-status', checkedAt: freshTimestamp })
+      expect(material.verification).toEqual({ status: 'verified-by-content', checkedAt: freshTimestamp })
     }
 
     // Outlier-story citations are phase-level, so a session filter excludes

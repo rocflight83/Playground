@@ -56,14 +56,6 @@ export const fixturePlan: PlanData = {
           paid: false,
           verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:10:00.000Z' },
         },
-        {
-          title: 'Python Official Tutorial - Data Structures',
-          url: 'https://docs.python.org/3/tutorial/introduction.html#data-structures',
-          sourceType: 'preferred',
-          estimatedDuration: 25,
-          paid: false,
-          verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:12:00.000Z' },
-        },
       ],
       selfCheck: 'Can I write a script that prints sys.argv values?',
       estimatedTime: 60,
@@ -75,21 +67,21 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Write a script that filters files by extension',
       materials: [
         {
-          title: 'Python Official Docs - Control Flow',
-          url: 'https://docs.python.org/3/tutorial/controlflow.html',
-          sourceType: 'preferred',
-          estimatedDuration: 35,
-          paid: false,
-          verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:15:00.000Z' },
-        },
-        {
           title: 'Real Python - Python Data Types (deep dive)',
           url: 'https://realpython.com/python-data-types/',
           sourceType: 'preferred',
           estimatedDuration: 25,
           paid: true,
           price: 29,
-          verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:16:00.000Z' },
+          verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:12:00.000Z' },
+        },
+        {
+          title: 'Doug Hellmann - PyMOTW: Data Structures',
+          url: 'https://pymotw.com/3/collections.html',
+          sourceType: 'practitioner',
+          estimatedDuration: 35,
+          paid: false,
+          verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:15:00.000Z' },
         },
       ],
       selfCheck: 'Can I use if/else and loops to filter files by extension?',
@@ -102,9 +94,9 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Create a reusable function to validate file extensions',
       materials: [
         {
-          title: 'Python Modules Documentation',
-          url: 'https://docs.python.org/3/tutorial/modules.html',
-          sourceType: 'preferred',
+          title: 'David Beazley - Python 3 Metaprogramming',
+          url: 'https://www.dabeaz.com/talks.html',
+          sourceType: 'practitioner',
           estimatedDuration: 25,
           paid: false,
           verification: { status: 'replaced-after-failure', checkedAt: '2026-01-05T09:20:00.000Z' },
@@ -203,9 +195,9 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Create a minimal pyproject.toml',
       materials: [
         {
-          title: 'Python Packaging Tutorial',
-          url: 'https://packaging.python.org/en/latest/tutorials/packaging-projects/',
-          sourceType: 'preferred',
+          title: 'Brett Slatkin - Effective Python: Packaging',
+          url: 'https://effectivepython.com/',
+          sourceType: 'practitioner',
           estimatedDuration: 35,
           paid: false,
           verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:33:00.000Z' },
@@ -260,8 +252,8 @@ export const fixturePlan: PlanData = {
         'Catch up on missed application sessions and re-touch the highest-frequency units from sessions 1–10',
       materials: [
         {
-          title: 'Python Packaging User Guide (full review)',
-          url: 'https://packaging.python.org/en/latest/',
+          title: 'Real Python - Python Application Layouts',
+          url: 'https://realpython.com/python-application-layouts/',
           sourceType: 'preferred',
           estimatedDuration: 30,
           paid: false,
@@ -308,9 +300,9 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Add graceful error handling and logging to the CLI',
       materials: [
         {
-          title: 'logging Documentation',
-          url: 'https://docs.python.org/3/library/logging.html',
-          sourceType: 'preferred',
+          title: 'Vinay Sajip - Logging in Python',
+          url: 'https://github.com/vinay-sajip',
+          sourceType: 'practitioner',
           estimatedDuration: 30,
           paid: false,
           verification: { status: 'verified-by-status', checkedAt: '2026-01-05T09:48:00.000Z' },
@@ -328,9 +320,9 @@ export const fixturePlan: PlanData = {
       artifactOneLiner: 'Build, package and publish a complete CLI tool',
       materials: [
         {
-          title: 'Python Packaging User Guide',
-          url: 'https://packaging.python.org/en/latest/',
-          sourceType: 'preferred',
+          title: 'Trey Hunner - Packaging Your Python Project',
+          url: 'https://hunner.pythonanywhere.com/talks/packaging-your-python-project',
+          sourceType: 'practitioner',
           estimatedDuration: 90,
           paid: false,
           verification: { status: 'verified-by-content', checkedAt: '2026-01-05T09:52:00.000Z' },
