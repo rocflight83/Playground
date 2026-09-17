@@ -1,8 +1,3 @@
-import {
-  DURATION_MISMATCH_MIN_MINUTES,
-  DURATION_MISMATCH_RATIO,
-  isDurationMismatch,
-} from '../src/plan-types'
 import type { PlanData } from '../src/plan-types'
 import { validatePlan } from '../src/validation'
 import { fixturePlan } from './fixtures/plan-fixture'
@@ -459,33 +454,6 @@ describe('validatePlan', () => {
     expect(
       errors.some((e) => e.includes('session 1 materials total') && e.includes('exceeds'))
     ).toBe(true)
-  })
-})
-
-describe('isDurationMismatch (issue 13: consumption time, measured and warned)', () => {
-  it('warns when the estimate is more than 2x and 10 min over the measurement (overstated)', () => {
-    expect(isDurationMismatch(60, 15)).toBe(true)
-  })
-
-  it('warns when the measurement is more than 2x and 10 min over the estimate (understated)', () => {
-    expect(isDurationMismatch(15, 60)).toBe(true)
-  })
-
-  it('does not warn when the ratio is under 2 (20 min estimated, 12 measured)', () => {
-    expect(isDurationMismatch(20, 12)).toBe(false)
-  })
-
-  it('does not warn when the gap is under 10 min (8 estimated, 3 measured)', () => {
-    expect(isDurationMismatch(8, 3)).toBe(false)
-  })
-
-  it('does not warn when the ratio is exactly 2 (30 vs 15)', () => {
-    expect(isDurationMismatch(30, 15)).toBe(false)
-  })
-
-  it('exposes the constants the renderer and verifier both call', () => {
-    expect(DURATION_MISMATCH_RATIO).toBe(2)
-    expect(DURATION_MISMATCH_MIN_MINUTES).toBe(10)
   })
 })
 

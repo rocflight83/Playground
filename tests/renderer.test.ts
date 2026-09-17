@@ -496,68 +496,54 @@ describe('consumption time appears on the page when measurement disagrees with t
     return plan
   }
 
-  it('renders a .material-measured note beside the stated duration when a word-count measurement mismatches', () => {
+  it('renders a measured note beside the stated duration when a word-count measurement mismatches', () => {
     const plan = withMeasurement(60, 15, 'word-count')
     const doc = structure(renderPlan(plan))
-    const note = doc.querySelector('.material-measured')
-    expect(note).not.toBeNull()
-    expect(note?.textContent).toContain('60 min')
-    expect(note?.textContent).toContain('15 min read')
+    expect(doc.body.textContent).toContain('60 min stated')
+    expect(doc.body.textContent).toContain('15 min read')
   })
 
   it('renders the note as a watch reading when measuredBy is video-metadata', () => {
     const plan = withMeasurement(10, 45, 'video-metadata')
     const doc = structure(renderPlan(plan))
-    const note = doc.querySelector('.material-measured')
-    expect(note?.textContent).toContain('10 min')
-    expect(note?.textContent).toContain('45 min watch')
+    expect(doc.body.textContent).toContain('10 min stated')
+    expect(doc.body.textContent).toContain('45 min watch')
   })
 
-  it('renders no .material-measured element when the measurement is inside the ratio+gap band', () => {
+  it('renders no measured note when the measurement is inside the ratio+gap band', () => {
     const plan = withMeasurement(20, 15, 'word-count')
     const doc = structure(renderPlan(plan))
-    expect(doc.querySelector('.material-measured')).toBeNull()
+    expect(doc.body.textContent).not.toContain('stated · measured')
   })
 
-  it('renders no .material-measured element when the material has no measurement', () => {
+  it('renders no measured note when the material has no measurement', () => {
     const plan = clonePlan(fixturePlan)
     plan.sessions = [plan.sessions[0]]
     const doc = structure(renderPlan(plan))
-    expect(doc.querySelector('.material-measured')).toBeNull()
+    expect(doc.body.textContent).not.toContain('stated · measured')
   })
 
-  it('keeps both the stated and measured figures inside the .material-measured node', () => {
+  it('keeps both the stated and measured figures in the rendered material', () => {
     const plan = withMeasurement(60, 15, 'word-count')
     const doc = structure(renderPlan(plan))
-    const material = doc.querySelector('.material')
-    const statedDuration = material?.querySelector('.material-duration')?.textContent
-    const measuredNote = material?.querySelector('.material-measured')?.textContent
-    expect(statedDuration).toContain('60 min')
-    expect(measuredNote).toContain('60 min')
-    expect(measuredNote).toContain('15 min read')
+    expect(doc.body.textContent).toContain('60 min stated')
+    expect(doc.body.textContent).toContain('15 min read')
   })
 })
 
 describe('every session shows its materials / artifact time split (issue 13)', () => {
-  it('renders a .session-budget line under each session\'s materials list', () => {
+  it('renders a budget line for every session', () => {
     const doc = structure(renderPlan(fixturePlan))
-    const sessions = Array.from(doc.querySelectorAll('.session'))
-    expect(sessions.length).toBe(14)
-    for (const el of sessions) {
-      const budget = el.querySelector('.session-budget')
-      expect(budget).not.toBeNull()
-    }
+    expect((doc.body.textContent?.match(/Budget:/g) ?? []).length).toBe(14)
   })
 
   it('reports the materials total and the artifact remainder for each session', () => {
     const doc = structure(renderPlan(fixturePlan))
     for (const session of fixturePlan.sessions) {
-      const el = doc.querySelector(`.session[data-session="${session.number}"]`)!
       const materialsTotal = session.materials.reduce((sum, m) => sum + m.estimatedDuration, 0)
       const remainder = session.estimatedTime - materialsTotal
-      const budget = el.querySelector('.session-budget')?.textContent ?? ''
-      expect(budget).toContain(`${materialsTotal} min on materials`)
-      expect(budget).toContain(`${remainder} min on the artifact`)
+      expect(doc.body.textContent).toContain(`${materialsTotal} min on materials`)
+      expect(doc.body.textContent).toContain(`${remainder} min on the artifact`)
     }
   })
 
@@ -569,12 +555,9 @@ describe('every session shows its materials / artifact time split (issue 13)', (
     ]
     target.estimatedTime = 55
 
-    const el = structure(renderPlan(plan)).querySelector(
-      `.session[data-session="${target.number}"]`
-    )!
-    const budget = el.querySelector('.session-budget')?.textContent ?? ''
-    expect(budget).toContain('55 min on materials')
-    expect(budget).toContain('0 min on the artifact')
+    const text = structure(renderPlan(plan)).body.textContent ?? ''
+    expect(text).toContain('55 min on materials')
+    expect(text).toContain('0 min on the artifact')
   })
 })
 

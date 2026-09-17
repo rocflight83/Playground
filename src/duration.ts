@@ -40,10 +40,10 @@ export interface DurationMeasurement {
 
 const ISO8601_DURATION = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i
 const ITEMPROP_DURATION_META =
-  /<meta\b[^>]*\bitemprop\s*=\s*"duration"[^>]*\bcontent\s*=\s*"(PT[^"]+)"/i
+  /<meta\b(?=[^>]*\bitemprop\s*=\s*['"]duration['"])(?=[^>]*\bcontent\s*=\s*['"](PT[^'"]+)['"])[^>]*>/i
 const JSON_DURATION = /"duration"\s*:\s*"(PT[^"]+)"/i
 const OG_VIDEO_DURATION_META =
-  /<meta\b[^>]*\bproperty\s*=\s*"og:video:duration"[^>]*\bcontent\s*=\s*"([^"]+)"/i
+  /<meta\b(?=[^>]*\bproperty\s*=\s*['"]og:video:duration['"])(?=[^>]*\bcontent\s*=\s*['"]([^'"]+)['"])[^>]*>/i
 const LENGTH_SECONDS = /"lengthSeconds"\s*:\s*"(\d+)"/i
 const STATED_READ_TIME =
   /(\d+)[\s-]*min(?:ute)?[\s-]*read|reading\s*time\s*:\s*(\d+)\s*min/i
@@ -93,8 +93,13 @@ function extractVideoSeconds(body: string): number | null {
 }
 
 function extractStatedReadMinutes(body: string): number | null {
-  // Strip tags before matching, so the label can be anywhere in the markup.
-  const text = body.replace(/<[^>]*>/g, ' ')
+  // Remove non-visible blocks before stripping tags, so a script string such
+  // as "10 min read" cannot masquerade as the publisher's label.
+  let visible = body
+  for (const tag of ['script', 'style', 'noscript', 'template', 'svg']) {
+    visible = stripBlocks(visible, tag)
+  }
+  const text = visible.replace(/<[^>]*>/g, ' ')
   const match = text.match(STATED_READ_TIME)
   if (!match) return null
   const raw = match[1] ?? match[2]
@@ -124,7 +129,13 @@ function countWords(body: string): number {
 }
 
 export function measureConsumptionMinutes(url: string, body: string): DurationMeasurement | null {
-  if (url.toLowerCase().endsWith('.pdf')) return null
+  let pathname: string | null = null
+  try {
+    pathname = new URL(url).pathname.toLowerCase()
+  } catch {
+    pathname = url.toLowerCase().split(/[?#]/, 1)[0]
+  }
+  if (pathname.endsWith('.pdf')) return null
   if (body.trimStart().startsWith('%PDF')) return null
 
   const videoSeconds = extractVideoSeconds(body)

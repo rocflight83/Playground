@@ -12,6 +12,12 @@ describe('measureConsumptionMinutes', () => {
       expect(result).toEqual({ minutes: 13, basis: 'video-metadata' })
     })
 
+    it('reads metadata when content appears before the identifying attribute', () => {
+      const body = html('<meta content="PT12M34S" itemprop="duration">')
+      const result = measureConsumptionMinutes('https://example.com/watch', body)
+      expect(result).toEqual({ minutes: 13, basis: 'video-metadata' })
+    })
+
     it('reads lengthSeconds when that is the only signal', () => {
       const body = html('<script>{"lengthSeconds":"754"}</script>')
       const result = measureConsumptionMinutes('https://www.youtube.com/watch?v=x', body)
@@ -151,12 +157,22 @@ describe('measureConsumptionMinutes', () => {
       const result = measureConsumptionMinutes('https://example.com/x', body)
       expect(result).toEqual({ minutes: 5, basis: 'stated-read-time' })
     })
+
+    it('ignores read-time text inside non-visible script blocks', () => {
+      const body = html('<script>const label = "10 min read"</script><article>prose</article>')
+      expect(measureConsumptionMinutes('https://example.com/x', body)).toBeNull()
+    })
   })
 
   describe('materials the shell cannot measure honestly', () => {
     it('returns null for a .pdf URL whatever the body', () => {
       const body = html('<article>lots of prose here</article>')
       expect(measureConsumptionMinutes('https://example.com/paper.pdf', body)).toBeNull()
+    })
+
+    it('returns null for a PDF URL with a query string', () => {
+      const body = html('<article>lots of prose here</article>')
+      expect(measureConsumptionMinutes('https://example.com/paper.pdf?download=1', body)).toBeNull()
     })
 
     it('returns null for a body that starts with %PDF', () => {
