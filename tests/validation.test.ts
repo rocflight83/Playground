@@ -306,6 +306,14 @@ describe('validatePlan', () => {
     expect(errors.some((e) => e.includes("is a forum thread and cannot be practitioner-tier"))).toBe(true)
   })
 
+  it('rejects a Hacker News practitioner-tier material (its registrable domain is ycombinator.com)', () => {
+    const plan = clonePlan(fixturePlan)
+    plan.sessions[0].materials[0].sourceType = 'practitioner'
+    plan.sessions[0].materials[0].url = 'https://news.ycombinator.com/item?id=123'
+    const errors = validatePlan(plan)
+    expect(errors.some((e) => e.includes("is a forum thread and cannot be practitioner-tier"))).toBe(true)
+  })
+
   it('accepts the same forum URL when its tier is off-list (the tripwire only rejects practitioner)', () => {
     const plan = clonePlan(fixturePlan)
     plan.sessions[0].materials[0].sourceType = 'off-list'

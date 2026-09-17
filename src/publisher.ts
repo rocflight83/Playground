@@ -75,7 +75,7 @@ const FORUM_HOSTS: ReadonlySet<string> = new Set([
   'reddit.com',
   'stackoverflow.com',
   'stackexchange.com',
-  'news.ycombinator.com',
+  'ycombinator.com',
   'quora.com',
 ])
 
