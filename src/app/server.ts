@@ -21,7 +21,7 @@ import { PlanNotFoundError } from './plan-store.ts'
 import type { CurateCallerRequest, Planner } from './planner.ts'
 import { PlanBusyError } from './planner.ts'
 import type { PlanData } from '../plan-types.ts'
-import { renderPlan } from '../renderer.ts'
+import { esc, renderPlan } from '../renderer.ts'
 import { validatePlan } from '../validation.ts'
 
 export interface AppDeps {
@@ -176,16 +176,6 @@ export function createApp(deps: AppDeps): RequestHandler {
 
 // -- The pages ----------------------------------------------------------------
 
-/** Escape data on its way into HTML (attribute or text). */
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
 /**
  * JSON that is safe inside a `<script>` element: `<` becomes `<`, so
  * plan prose or a note containing `</script>` cannot end the element early.
@@ -329,7 +319,7 @@ function renderPlanRow(summary: PlanSummary, progress: Progress): string {
     esc(href) +
     '">Open</a><a href="' +
     esc(href + '/export') +
-    '" download>Download export</a></div></li>'
+    '" download>Export</a></div></li>'
   )
 }
 

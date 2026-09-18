@@ -8,7 +8,7 @@ import type {
 } from './plan-types.ts'
 import { isDurationMismatch } from './plan-types.ts'
 
-function esc(value: string): string {
+export function esc(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

@@ -27,7 +27,7 @@ import {
 import { validatePlan } from '../validation.ts'
 import type { FetchLike, VerificationReport, VerifyPlanOptions } from '../verification.ts'
 import { verifyPlan } from '../verification.ts'
-import type { PlanStore, Progress } from './plan-store.ts'
+import type { PlanStore } from './plan-store.ts'
 import {
   type Intelligence,
   type PlanBrief,
@@ -100,9 +100,6 @@ export interface PlannerDeps {
   ids?: () => string
   fetchTimeoutMs?: number
   fetchConcurrency?: number
-  /** Reserved for a future per-plan progress flush; the app's server writes
-   * progress through the store today, never the Planner. */
-  progress?: Progress
 }
 
 /**

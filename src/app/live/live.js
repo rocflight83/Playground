@@ -183,12 +183,15 @@
     }
   }
 
-  function addRow(id, label, job, reloadOnApply, atEnd) {
+  // options: { label, reloadOnApply, atEnd } — label defaults to the job's
+  // kind; atEnd appends (the on-load list already arrives newest first),
+  // otherwise the row goes on top.
+  function addRow(id, job, options) {
     var row = trayRows[id];
     if (!row) {
-      row = { id: id, li: el('li', 'live-tray-row'), label: label, reloadOnApply: reloadOnApply };
+      row = { id: id, li: el('li', 'live-tray-row'), label: options.label || null, reloadOnApply: Boolean(options.reloadOnApply) };
       trayRows[id] = row;
-      if (atEnd || !trayList.firstChild) trayList.appendChild(row.li);
+      if (options.atEnd || !trayList.firstChild) trayList.appendChild(row.li);
       else trayList.insertBefore(row.li, trayList.firstChild);
     }
     row.job = job;
@@ -216,7 +219,7 @@
   }
 
   function trackJob(jobId, label) {
-    var row = addRow(jobId, label, { stage: 'requested' }, true, false);
+    var row = addRow(jobId, { stage: 'requested' }, { label: label, reloadOnApply: true });
     poll(row);
   }
 
@@ -229,10 +232,10 @@
       .then(function (answer) {
         if (answer.ok && answer.body && answer.body.jobId) { trackJob(answer.body.jobId, label); return; }
         var message = answer.body && answer.body.error ? answer.body.error : 'request not accepted';
-        addRow('local-' + (++localCount), label, { stage: 'failed', result: { error: message } }, false, false);
+        addRow('local-' + (++localCount), { stage: 'failed', result: { error: message } }, { label: label });
       })
       .catch(function (err) {
-        addRow('local-' + (++localCount), label, { stage: 'failed', result: { error: String(err) } }, false, false);
+        addRow('local-' + (++localCount), { stage: 'failed', result: { error: String(err) } }, { label: label });
       });
   }
 
@@ -244,7 +247,7 @@
       for (var i = 0; i < jobs.length; i++) {
         var job = jobs[i];
         if (!job || !job.id) continue;
-        var row = addRow(job.id, null, job, !isTerminal(job.stage), true);
+        var row = addRow(job.id, job, { reloadOnApply: !isTerminal(job.stage), atEnd: true });
         if (!isTerminal(job.stage)) poll(row);
       }
     })
