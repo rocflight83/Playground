@@ -34,8 +34,16 @@ refusals cost no intelligence call (the `checkCurationRequest` seam in
 this — `src/app/server.ts` (`createApp`: plan list, **live page**, export
 and the JSON API), the curation layer in `src/app/live/`, and `npm run
 app` — with progress for the live page kept in the store through the
-`window.StudyPlanStore` seam in the page script. Ticket 19 adds the real
-provider adapter (see `.scratch/study-plan-generator/`). Ticket 12 adds source breadth:
+`window.StudyPlanStore` seam in the page script. Ticket 19 (#30) adds the
+first real provider adapter, `createXaiIntelligence` in
+`src/app/intelligence-xai.ts` (xAI via the `openai` client, Responses
+API, server-side `web_search` + `x_search`, structured output from the
+hand-written schemas in `src/app/plan-schema.ts`), `loadPrompts` in
+`src/app/prompts.ts`, the unfetchable-host rule (an X post is never a
+material: `isUnfetchableHost` in `src/publisher.ts`, enforced by
+`validatePlan`, explained in `prompts/policy.md`), `npm run dry-run`, and
+the `plans/.usage.log` usage log. Claude (#29) is the fallback adapter,
+built only if a dry-run tripwire fires. Ticket 12 adds source breadth:
 `src/publisher.ts` (a pure `publisherKey(url)` that maps a material URL
 to its publisher — registrable domain with hosting-platform tenant
 awareness, returning `null` for video hosts whose URL does not name the
@@ -94,9 +102,26 @@ carry an explicit `.ts` extension: Node's ESM resolver requires it.
   the stage it failed at (`request`, `merged-plan`, or `verification`).
 - `npm run app` — the local app on `http://127.0.0.1:4321/` (`PORT` to
   change): plan list, live page, export and API over the plans in `plans/`.
-  `STUDY_PLAN_INTELLIGENCE=scripted` (the default) has no provider behind
-  it, so generate and curate jobs fail with "no provider configured" while
-  everything else works.
+  `STUDY_PLAN_INTELLIGENCE` picks the adapter: `xai` (the default when
+  `XAI_API_KEY` is set) or `scripted` (the default otherwise), which has
+  no provider behind it, so generate and curate jobs fail with "no
+  provider configured" while everything else works. `claude` is reserved
+  for #29 and fails until it is built.
+- `npm run dry-run -- <subject> <level> <hours> <target>` — the provider
+  dry run: one generate, one drop-as-known (session 3) and one
+  swap-material (session 4, "want a practitioner take") through the
+  Planner against the live xAI API, printing wall time, tokens, tool
+  calls by kind, list-price cost, outcome and unresolved count per step,
+  then the decision-8 tripwires from #30. Writes the plan to `plans/`
+  like any generate. Run once, by hand, with the human's key.
+- **Environment.** `app` and `dry-run` pass `--env-file-if-exists=.env`
+  (Node ≥ 22.9; no `dotenv`), so `.env` at the repo root may hold
+  `XAI_API_KEY=…`. `.env` is git-ignored, but the repo folder is
+  OneDrive-synced, so treat a key that lands there as one you can rotate.
+  The key is never pasted into an issue, a commit or a chat. Every xAI
+  call appends one JSON line (`{ at, call, model, inputTokens,
+  outputTokens, cacheReadTokens, toolCalls, ms }`) to `plans/.usage.log`
+  (git-ignored with `plans/`).
 - `npm test` — run the whole suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (run this regularly; it must stay clean)
@@ -287,6 +312,33 @@ be followed downstream):
   the app runs without a provider: generate / replace calls throw
   `IntelligenceUnavailableError` (a `failed` job with that message);
   `findReplacementUrl` answers `null` so verify jobs still run.
+- `src/app/intelligence-xai.ts` — `createXaiIntelligence(opts): Intelligence`,
+  the xAI adapter. `instructions` = `prompts/policy.md` + the call's duty
+  file; the call's context (brief, plan, session, computed units,
+  `budget`) is one user message whose text is JSON — no prompt prose
+  lives in TypeScript. `text.format` is the call's schema from
+  `plan-schema.ts` (`plan`, `session_replacement`, `material`,
+  `replacement_url`), a shape hint for the model, never a gate: answers
+  come back as `unknown` and `validatePlan` stays the only truth.
+  `store: false` on every request; repair rounds resend the previous
+  attempt and its errors as a further user message. One combined
+  tool-call cap per call kind (`maxToolCalls`, default 30 / 8 / 3) is
+  sent as xAI's `max_turns` and repeated in the user JSON's `budget`;
+  `x_search` is offered per `xSearch` (`generate` — generate and
+  replaceMaterial only, the default; `sourcing`; `off`). An `incomplete`
+  response or non-JSON `output_text` throws `IntelligenceError` naming
+  the reason; client errors propagate. `onUsage` gets one record per
+  call. The client is injected as the narrow `XaiClient`; `xaiClientOf`
+  is the single cast from `OpenAI`. The adapter never verifies links.
+- `src/app/plan-schema.ts` — `PLAN_SCHEMAS`, the hand-written JSON
+  schemas mirroring `plan-types.ts`. When `plan-types.ts` changes this
+  file changes with it: `tests/plan-schema.test.ts` walks a fixture plan
+  carrying every optional field and fails on any key the schema does not
+  name, and checks xAI's strict-mode rules so `strictSchema` can be
+  switched on. `zod` is declared in `package.json` but unused in `src/`;
+  do not introduce it here.
+- `src/app/prompts.ts` — `loadPrompts(dir = 'prompts')` reads the four
+  prompt files once; the adapter itself never touches the filesystem.
 - `src/app/limits.ts` — `withLimits(fetch, { timeoutMs, concurrency })`
   wraps a `FetchLike` with `AbortSignal.timeout` and a counting
   semaphore. The shell's `verifyPlan` has neither today and must not
@@ -335,10 +387,19 @@ be followed downstream):
   Data reaches the DOM only through `textContent`/`setAttribute`; classes
   are prefixed `live-`.
 - `scripts/app.ts` — the command behind `npm run app`. Wires
-  `FilePlanStore('plans')`, the intelligence named by
-  `STUDY_PLAN_INTELLIGENCE` (`scripted` → `UnavailableIntelligence`), the
-  real `fetch`, and the live layer's files read at startup; binds
-  `127.0.0.1` only.
+  `FilePlanStore('plans')`, the intelligence `wire-intelligence.ts`
+  picks, the real `fetch`, and the live layer's files read at startup;
+  binds `127.0.0.1` only.
+- `scripts/wire-intelligence.ts` — shared by `app` and `dry-run`:
+  `pickIntelligence(env)` maps `STUDY_PLAN_INTELLIGENCE` (`xai` /
+  `scripted` / reserved `claude`) to an adapter — for `xai`, `new
+  OpenAI({ baseURL: 'https://api.x.ai/v1', apiKey })` through
+  `xaiClientOf`, `loadPrompts()`, and `usageLogger` appending to
+  `plans/.usage.log`.
+- `scripts/dry-run.ts` — the command behind `npm run dry-run`. Runs the
+  Planner directly (no server) through the three steps above, prices
+  each from a dated `RATES` constant (#13's list prices), and evaluates
+  the decision-8 tripwires (a–c; d is the human's).
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,
@@ -360,7 +421,7 @@ be followed downstream):
   on the three refusal shapes. The request is read from a JSON file (HTML
   is rejected with a JSON error) and `at` is filled with the current time
   when omitted.
-- `scripts/proxy-preload.mjs` — `--import`ed by all three commands above.
+- `scripts/proxy-preload.mjs` — `--import`ed by every command above.
   Node's `fetch` ignores `HTTP_PROXY`/`HTTPS_PROXY`, so on a machine that only
   reaches the web through a local proxy every link check fails with a DNS or
   connect error while `curl` succeeds. The preload installs undici's
@@ -368,5 +429,7 @@ be followed downstream):
 
 ## Security considerations
 
-- No secrets, no network calls in the deterministic layer.
+- No secrets, no network calls in the deterministic layer. The only
+  network callers are the verifier's injected `fetch` and the xAI
+  adapter's injected client; tests fake both.
 - HTML escaping of all data is the XSS guard for the hand-edit workflow.

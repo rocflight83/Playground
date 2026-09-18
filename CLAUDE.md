@@ -20,6 +20,11 @@ from the network.
   and render a plan the `/study-plan` skill produced
 - `npm run app` — the local app (plan list, live page, export, API) on
   `http://127.0.0.1:4321/`
+  `STUDY_PLAN_INTELLIGENCE=xai|scripted` picks the adapter (default `xai`
+  when `XAI_API_KEY` is set — env or `.env` — else `scripted`)
+- `npm run dry-run -- <subject> <level> <hours> <target>` — one live
+  generate + two curations through the xAI adapter, with cost and the
+  #30 tripwires printed
 - `npm test` — run the suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (must stay clean)

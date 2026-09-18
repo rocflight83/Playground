@@ -7,7 +7,7 @@ import {
   MIN_REPEATED_UNIT_SESSIONS,
   consolidationSlotsDescription,
 } from './plan-types.ts'
-import { isForumHost, publisherKey } from './publisher.ts'
+import { isForumHost, isUnfetchableHost, publisherKey } from './publisher.ts'
 
 const KNOWN_CURATION_INTENTS: ReadonlySet<CurationIntent> = new Set([
   'drop-as-known',
@@ -174,6 +174,14 @@ export function validatePlan(plan: PlanData): ValidationError[] {
       if (material.sourceType === 'practitioner' && isForumHost(material.url)) {
         errors.push(
           `session ${session.number} material '${material.title}' is a forum thread and cannot be practitioner-tier; use 'off-list' if it is genuinely the best source`
+        )
+      }
+      // Unfetchable hosts (issue 30): an X post cannot be fetched by
+      // verification, so it is never a material at any tier. The policy
+      // tells the intelligence to follow such posts to what they point at.
+      if (isUnfetchableHost(material.url)) {
+        errors.push(
+          `session ${session.number} material '${material.title}' is on a host that cannot be fetched by verification (x.com / twitter.com); posts there are a discovery signal, not a material — use what the post points at`
         )
       }
       // Duration measurement (issue 13): verification writes these when it

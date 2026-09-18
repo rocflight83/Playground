@@ -89,6 +89,8 @@ _Avoid_: history entry, audit log
 
 **Sourcing**:
 The intelligence's work of choosing a session's or replacement's materials.
+A discovery signal — what practitioners recommend on a social network, a
+search engine's results — informs sourcing but is never itself a material.
 _Avoid_: search, lookup
 
 **Verification**:

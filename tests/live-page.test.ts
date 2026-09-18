@@ -277,7 +277,7 @@ describe('live page: the request tray (scenario 12)', () => {
   it('jobs already on record for the plan appear in the tray on load, newest first', async () => {
     const jobs: Job[] = [
       { id: 'j2', kind: 'verify', planId: PLAN_ID, stage: 'applied', startedAt: 't', updatedAt: 't' },
-      { id: 'j1', kind: 'curate', planId: PLAN_ID, stage: 'failed', startedAt: 't', updatedAt: 't', result: { error: 'no provider configured; see ticket 19' } },
+      { id: 'j1', kind: 'curate', planId: PLAN_ID, stage: 'failed', startedAt: 't', updatedAt: 't', result: { error: 'no provider configured; set XAI_API_KEY (see #30)' } },
     ]
     const { doc } = loadLive(fixturePlan, {}, jobs)
     await settle()
@@ -285,6 +285,6 @@ describe('live page: the request tray (scenario 12)', () => {
     expect(tray.hidden).toBe(false)
     const text = tray.textContent!
     expect(text.indexOf('Verify')).toBeLessThan(text.indexOf('Curate'))
-    expect(text).toContain('no provider configured; see ticket 19')
+    expect(text).toContain('no provider configured; set XAI_API_KEY (see #30)')
   })
 })

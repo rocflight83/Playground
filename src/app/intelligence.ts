@@ -1,8 +1,9 @@
 /**
  * The provider-neutral seam for whatever produces plan prose and replacement
- * sessions / materials — the `/study-plan` skill today, the Claude-API
- * adapter in #19. The Planner never trusts an `unknown` answer until
- * `validatePlan` (or the merged-plan validation) has accepted it. The
+ * sessions / materials — the `/study-plan` skill, or the xAI adapter in
+ * `intelligence-xai.ts` (#30; Claude in #29 is the fallback). The Planner
+ * never trusts an `unknown` answer until `validatePlan` (or the
+ * merged-plan validation) has accepted it. The
  * `ScriptedIntelligence` adapter below records every call so tests can
  * reason about what the Planner did with the work, not how it called the
  * network.
@@ -162,13 +163,25 @@ async function resolveScripted<T>(entry: ScriptedQueueEntry<T>): Promise<T> {
 }
 
 /**
+ * Thrown by a provider adapter when the provider answered but the answer
+ * cannot be used: the response was cut short, or its text is not JSON.
+ * The message names the reason. The Planner marks the job `failed` with it.
+ */
+export class IntelligenceError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'IntelligenceError'
+  }
+}
+
+/**
  * Thrown by an intelligence that has no provider behind it. The Planner
  * turns it into a `failed` job carrying this message, so the app runs —
- * plan list, live page, progress, export, import and verify jobs — before
- * a real adapter exists (ticket 19).
+ * plan list, live page, progress, export, import and verify jobs — without
+ * an API key.
  */
 export class IntelligenceUnavailableError extends Error {
-  constructor(message = 'no provider configured; see ticket 19') {
+  constructor(message = 'no provider configured; set XAI_API_KEY (see #30)') {
     super(message)
     this.name = 'IntelligenceUnavailableError'
   }

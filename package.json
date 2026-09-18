@@ -10,7 +10,8 @@
     "verify": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/verify.ts",
     "redo": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/redo.ts",
     "curate": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/curate.ts",
-    "app": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/app.ts",
+    "app": "node --experimental-strip-types --env-file-if-exists=.env --import ./scripts/proxy-preload.mjs scripts/app.ts",
+    "dry-run": "node --experimental-strip-types --env-file-if-exists=.env --import ./scripts/proxy-preload.mjs scripts/dry-run.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -27,6 +28,7 @@
   },
   "type": "module",
   "dependencies": {
+    "openai": "^7.18.0",
     "zod": "^4.6.2"
   }
 }

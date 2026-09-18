@@ -4,34 +4,25 @@
  *
  * Usage: npm run app        (PORT=4321 by default; binds 127.0.0.1 only)
  *
- * `STUDY_PLAN_INTELLIGENCE` picks the intelligence adapter. `scripted`
- * (the default) has no provider behind it: generate and curate jobs fail
- * with "no provider configured" while everything else works against the
- * plans already in `plans/`. Ticket 19 adds `claude`.
+ * `STUDY_PLAN_INTELLIGENCE` picks the intelligence adapter: `xai` (the
+ * default when `XAI_API_KEY` is set, from the environment or `.env`) or
+ * `scripted` (the default otherwise), which has no provider behind it —
+ * generate and curate jobs fail with "no provider configured" while
+ * everything else works against the plans already in `plans/`. `claude`
+ * is reserved for #29. See `scripts/wire-intelligence.ts`.
  *
  * The proxy preload is `--import`ed by the npm script so link verification
  * honours HTTP_PROXY / HTTPS_PROXY exactly as the CLI commands do.
  */
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { UnavailableIntelligence, type Intelligence } from '../src/app/intelligence.ts'
 import { FilePlanStore } from '../src/app/plan-store.ts'
 import { Planner } from '../src/app/planner.ts'
 import { createApp } from '../src/app/server.ts'
+import { intelligenceName, pickIntelligence } from './wire-intelligence.ts'
 
 const HOST = '127.0.0.1'
 const DEFAULT_PORT = 4321
-
-function pickIntelligence(name: string): Intelligence {
-  switch (name) {
-    case 'scripted':
-      return new UnavailableIntelligence()
-    default:
-      throw new Error(
-        `STUDY_PLAN_INTELLIGENCE=${name} is not a known adapter (known: scripted)`
-      )
-  }
-}
 
 async function main(): Promise<void> {
   const port = Number(process.env.PORT ?? DEFAULT_PORT)
@@ -44,14 +35,14 @@ async function main(): Promise<void> {
     css: await readFile(new URL('live.css', liveDir), 'utf8'),
   }
   const store = new FilePlanStore('plans')
-  const intelligence = pickIntelligence(process.env.STUDY_PLAN_INTELLIGENCE ?? 'scripted')
+  const intelligence = await pickIntelligence(process.env)
   const planner = new Planner({ store, intelligence, fetch })
   const server = createServer(createApp({ planner, store, live }))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(port, HOST, resolve)
   })
-  console.log(`Study plans: http://${HOST}:${port}/`)
+  console.log(`Study plans: http://${HOST}:${port}/ (intelligence: ${intelligenceName(process.env)})`)
 }
 
 main().catch((err: unknown) => {

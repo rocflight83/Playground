@@ -321,6 +321,32 @@ describe('validatePlan', () => {
     expect(validatePlan(plan)).toEqual([])
   })
 
+  describe('unfetchable hosts (issue 30: X posts are never materials)', () => {
+    for (const sourceType of ['preferred', 'practitioner', 'off-list'] as const) {
+      it(`rejects an x.com material at sourceType '${sourceType}'`, () => {
+        const plan = clonePlan(fixturePlan)
+        plan.sessions[0].materials[0].sourceType = sourceType
+        plan.sessions[0].materials[0].url = 'https://x.com/someone/status/123'
+        const errors = validatePlan(plan)
+        expect(errors.some((e) => e.includes('cannot be fetched by verification'))).toBe(true)
+      })
+    }
+
+    it('rejects a twitter.com material too (including www)', () => {
+      const plan = clonePlan(fixturePlan)
+      plan.sessions[0].materials[0].url = 'https://www.twitter.com/someone/status/123'
+      const errors = validatePlan(plan)
+      expect(errors.some((e) => e.includes('cannot be fetched by verification'))).toBe(true)
+    })
+
+    it('still accepts a non-X off-list material (the rule is host-specific)', () => {
+      const plan = clonePlan(fixturePlan)
+      plan.sessions[0].materials[0].sourceType = 'off-list'
+      plan.sessions[0].materials[0].url = 'https://example.com/a-blog-post'
+      expect(validatePlan(plan)).toEqual([])
+    })
+  })
+
   it('enforces a per-publisher cap of 4 distinct URLs across the plan', () => {
     const plan = makeMinimalPlan([
       'https://docs.python.org/3/tutorial/introduction.html',

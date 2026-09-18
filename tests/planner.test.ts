@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanBrief } from '../src/app/intelligence'
 import { ScriptedIntelligence } from '../src/app/intelligence'
+import { createXaiIntelligence, type XaiRequest, type XaiResponse } from '../src/app/intelligence-xai'
 import { MemoryPlanStore } from '../src/app/plan-store'
 import type { Job } from '../src/app/planner'
 import { Planner } from '../src/app/planner'
@@ -392,3 +393,33 @@ function makeReplacementSession(sessionNumber: number): Session {
     highFrequencyUnits: ['module structure', 'packaging'],
   }
 }
+
+describe('Planner + XaiIntelligence (scenario 8 of #30)', () => {
+  it('a full generate job through the xAI adapter and a fake client reaches applied', async () => {
+    const store = new MemoryPlanStore()
+    const plan = makePlan()
+    const requests: XaiRequest[] = []
+    const client = {
+      responses: {
+        create: async (params: XaiRequest): Promise<XaiResponse> => {
+          requests.push(params)
+          const answer = params.text.format.name === 'plan' ? plan : { url: null }
+          return { status: 'completed', output_text: JSON.stringify(answer) }
+        },
+      },
+    }
+    const intelligence = createXaiIntelligence({
+      client,
+      prompts: { policy: 'P', generate: 'G', replaceSession: 'S', replaceMaterial: 'M' },
+    })
+    const planner = new Planner({ store, intelligence, fetch: buildEchoingFetch(plan) })
+
+    const job = planner.generate(brief)
+    await waitForTerminal(job)
+    const { planId } = appliedReport(job)
+    expect(planId).toBe('python-programming')
+    expect(requests[0].text.format.name).toBe('plan')
+    const stored = await store.read(planId)
+    expect(stored.sessions).toHaveLength(14)
+  })
+})

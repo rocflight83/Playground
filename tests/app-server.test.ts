@@ -236,7 +236,7 @@ describe('plans API', () => {
     const { base, intelligence } = await start()
     const bad = await postJson(`${base}/api/plans`, { subject: 'X' })
     expect(bad.status).toBe(400)
-    intelligence.enqueuePlan({ throw: new Error('no provider configured; see ticket 19') })
+    intelligence.enqueuePlan({ throw: new Error('no provider configured; set XAI_API_KEY (see #30)') })
     const res = await postJson(`${base}/api/plans`, {
       subject: 'Rust',
       currentLevel: 'Beginner',
@@ -248,7 +248,7 @@ describe('plans API', () => {
     const job = await waitForTerminal(base, jobId)
     expect(job.kind).toBe('generate')
     expect(job.stage).toBe('failed')
-    expect(job.result).toEqual({ error: 'no provider configured; see ticket 19' })
+    expect(job.result).toEqual({ error: 'no provider configured; set XAI_API_KEY (see #30)' })
   })
 })
 
@@ -331,7 +331,7 @@ describe('without a provider (STUDY_PLAN_INTELLIGENCE=scripted)', () => {
     })
     const generateJob = await waitForTerminal(base, ((await generate.json()) as { jobId: string }).jobId)
     expect(generateJob.stage).toBe('failed')
-    expect(generateJob.result).toEqual({ error: 'no provider configured; see ticket 19' })
+    expect(generateJob.result).toEqual({ error: 'no provider configured; set XAI_API_KEY (see #30)' })
 
     const curate = await postJson(`${base}/api/plans/${FIXTURE_ID}/curations`, {
       intent: 'redo-session',
@@ -339,7 +339,7 @@ describe('without a provider (STUDY_PLAN_INTELLIGENCE=scripted)', () => {
     })
     const curateJob = await waitForTerminal(base, ((await curate.json()) as { jobId: string }).jobId)
     expect(curateJob.stage).toBe('failed')
-    expect(curateJob.result).toEqual({ error: 'no provider configured; see ticket 19' })
+    expect(curateJob.result).toEqual({ error: 'no provider configured; set XAI_API_KEY (see #30)' })
 
     const verify = await fetch(`${base}/api/plans/${FIXTURE_ID}/verify`, { method: 'POST' })
     expect(verify.status).toBe(202)

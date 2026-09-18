@@ -79,6 +79,21 @@ const FORUM_HOSTS: ReadonlySet<string> = new Set([
   'quora.com',
 ])
 
+/**
+ * Hosts verification cannot fetch: a post or thread there is never a
+ * material, at any tier. The intelligence may read them as a discovery
+ * signal and follow them to the blog, talk, video or repo they point at
+ * — *that* is the material. Keyed by registrable domain, like the forum
+ * set, so subdomains (`mobile.twitter.com`) match.
+ */
+const UNFETCHABLE_HOSTS: ReadonlySet<string> = new Set(['x.com', 'twitter.com'])
+
+export function isUnfetchableHost(url: string): boolean {
+  const key = publisherKey(url)
+  if (key === null) return false
+  return UNFETCHABLE_HOSTS.has(key)
+}
+
 export function isForumHost(url: string): boolean {
   const key = publisherKey(url)
   if (key === null) return false

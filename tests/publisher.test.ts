@@ -1,4 +1,4 @@
-import { publisherKey } from '../src/publisher'
+import { isUnfetchableHost, publisherKey } from '../src/publisher'
 
 describe('publisherKey', () => {
   describe('registrable-domain reduction', () => {
@@ -83,5 +83,17 @@ describe('publisherKey', () => {
     it('keeps query-string differences as the same publisher (the cap counts distinct URLs, not publishers alone)', () => {
       expect(publisherKey('https://example.com/page?a=1')).toBe(publisherKey('https://example.com/page?b=2'))
     })
+  })
+})
+
+describe('isUnfetchableHost', () => {
+  it('names x.com and twitter.com, with any subdomain', () => {
+    expect(isUnfetchableHost('https://x.com/a/status/1')).toBe(true)
+    expect(isUnfetchableHost('https://mobile.twitter.com/a/status/1')).toBe(true)
+  })
+
+  it('is false for everything else, including malformed URLs', () => {
+    expect(isUnfetchableHost('https://example.com/x.com')).toBe(false)
+    expect(isUnfetchableHost('not a url')).toBe(false)
   })
 })

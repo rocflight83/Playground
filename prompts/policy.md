@@ -233,6 +233,15 @@ tier by `validatePlan`. They may still be admitted off-list under the
 existing rules when they are genuinely the best available. The exclusion
 lives in the validator, not in your head.
 
+**X posts are never materials**: a post or thread on X (`x.com`,
+`twitter.com`) is never a material, at any tier, because verification
+cannot fetch it — the validator rejects the URL outright. What you learn
+from X is a discovery signal: which practitioners are recommended, which
+talk or write-up a thread is praising. Use it to find the blog post,
+talk, video or repo the post points at, and *that* is the material. The
+same holds for a search engine's results page: it informs sourcing but
+is not itself a material.
+
 At most **one paid material in the whole plan**, with its `price` set,
 and every session must remain completable from free materials alone. Both
 enforced.
