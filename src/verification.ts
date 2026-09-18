@@ -67,6 +67,9 @@ export interface VerifyPlanOptions {
    * nothing in between. Defaults to false (the existing retry behaviour).
    */
   noSubstitution?: boolean
+  /** URLs that must pass the content bar even when their supplied tier is
+   * `preferred`, used for learner-supplied material swaps. */
+  forceContentCheckUrls?: Iterable<string>
 }
 
 export interface MaterialVerificationOutcome {
@@ -107,12 +110,16 @@ export interface VerificationReport {
   durationWarnings: DurationWarning[]
 }
 
-function requiresContentCheck(sourceType: Material['sourceType'], isAnchor: boolean): boolean {
+function requiresContentCheck(
+  sourceType: Material['sourceType'],
+  isAnchor: boolean,
+  forceContentCheck: boolean
+): boolean {
   // The content bar applies to every non-preferred tier: a status-only
   // pass never suffices for an off-list or practitioner material, and
   // anchors — which a session leans on most heavily — content-check
   // regardless of tier.
-  return sourceType !== 'preferred' || isAnchor
+  return sourceType !== 'preferred' || isAnchor || forceContentCheck
 }
 
 function pageCoversConcept(text: string, concept: string): boolean {
@@ -146,7 +153,8 @@ async function checkCandidate(
   isAnchor: boolean,
   attempts: number,
   concept: string,
-  fetchImpl: FetchLike
+  fetchImpl: FetchLike,
+  forceContentCheck: boolean
 ): Promise<CheckResult> {
   let response: FetchResponse
   try {
@@ -161,7 +169,7 @@ async function checkCandidate(
     return { status: 'failed', candidate }
   }
 
-  if (!requiresContentCheck(candidate.sourceType, isAnchor)) {
+  if (!requiresContentCheck(candidate.sourceType, isAnchor, forceContentCheck)) {
     // Status-only path: try to read the body for measurement. A rejection
     // here must not fail verification — the page returned 2xx, so the link
     // is alive; we just cannot measure it.
@@ -212,13 +220,21 @@ async function verifyMaterial(
   opts: VerifyPlanOptions
 ): Promise<MaterialVerificationResult> {
   const concept = material.title
+  const forceContentCheckUrls = new Set(opts.forceContentCheckUrls ?? [])
   const triedUrls: string[] = []
   let candidate: Candidate = { title: material.title, url: material.url, sourceType: material.sourceType }
   let attempts = 0
 
   for (;;) {
     triedUrls.push(candidate.url)
-    const result = await checkCandidate(candidate, isAnchor, attempts, concept, opts.fetch)
+    const result = await checkCandidate(
+      candidate,
+      isAnchor,
+      attempts,
+      concept,
+      opts.fetch,
+      forceContentCheckUrls.has(candidate.url)
+    )
 
     if (result.status !== 'failed') {
       const now = (opts.now ?? (() => new Date().toISOString()))()

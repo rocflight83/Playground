@@ -102,8 +102,16 @@ function findSession(plan: PlanData, number: number): Session {
   return session
 }
 
+function invalidSessionNumber(number: number): string | null {
+  return Number.isInteger(number) && number >= 1 && number <= 14
+    ? null
+    : `sessionNumber (${number}) must be an integer from 1 through 14`
+}
+
 function dropAsKnown(plan: PlanData, request: DropAsKnownRequest): PlanData {
   const reasons: string[] = []
+  const invalidNumber = invalidSessionNumber(request.sessionNumber)
+  if (invalidNumber) reasons.push(`drop-as-known: ${invalidNumber}`)
   if (CONSOLIDATION_SLOTS.has(request.sessionNumber)) {
     reasons.push(
       `session ${request.sessionNumber} is a consolidation slot (${consolidationSlotsDescription()}) and cannot be dropped as known — use redo-session to rewrite a bad consolidation`
@@ -141,6 +149,8 @@ function dropAsKnown(plan: PlanData, request: DropAsKnownRequest): PlanData {
 
 function swapMaterial(plan: PlanData, request: SwapMaterialRequest): PlanData {
   const reasons: string[] = []
+  const invalidNumber = invalidSessionNumber(request.sessionNumber)
+  if (invalidNumber) throw new CurationRefusedError([`swap-material: ${invalidNumber}`], 'request')
   const session = findSession(plan, request.sessionNumber)
   const occurrences = session.materials.filter((m) => m.url === request.materialUrl).length
   if (occurrences === 0) {
@@ -200,6 +210,8 @@ function swapMaterial(plan: PlanData, request: SwapMaterialRequest): PlanData {
 
 function redoSessionShell(plan: PlanData, request: RedoSessionRequest): PlanData {
   const reasons: string[] = []
+  const invalidNumber = invalidSessionNumber(request.sessionNumber)
+  if (invalidNumber) reasons.push(`redo-session: ${invalidNumber}`)
   if (request.replacement.number !== request.sessionNumber) {
     reasons.push(
       `redo-session: replacement.number (${request.replacement.number}) must equal sessionNumber (${request.sessionNumber})`

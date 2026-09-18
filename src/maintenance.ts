@@ -238,6 +238,7 @@ export async function curatePlanDir(
     verifyOpts.noSubstitution = true
     verifyOpts.sessionNumbers = [request.sessionNumber]
     verifyOpts.materialUrls = [request.replacement.url]
+    verifyOpts.forceContentCheckUrls = [request.replacement.url]
   } else if (request.intent === 'swap-material') {
     verifyOpts.sessionNumbers = [request.sessionNumber]
     verifyOpts.materialUrls = [request.replacement.url]

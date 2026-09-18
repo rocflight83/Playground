@@ -842,3 +842,22 @@ describe('verifyPlan � curation filters (issue 15)', () => {
     expect(seen.sort()).toEqual(expectedUrls.sort())
   })
 })
+
+describe('verifyPlan forced content checks', () => {
+  it('forces a content check for a preferred learner-supplied URL', async () => {
+    const plan = clonePlan(fixturePlan)
+    const material = plan.sessions[2].materials[0]
+    material.sourceType = 'preferred'
+    const result = await verifyPlan(plan, {
+      fetch: async () => ok('unrelated page'),
+      searchReplacement: noReplacement,
+      now: fixedClock,
+      anchorUrls: [],
+      sessionNumbers: [3],
+      materialUrls: [material.url],
+      noSubstitution: true,
+      forceContentCheckUrls: [material.url],
+    })
+    expect(result.plan.sessions[2].materials[0].verification.status).toBe('unresolved-after-retries')
+  })
+})

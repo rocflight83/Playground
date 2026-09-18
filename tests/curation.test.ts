@@ -239,6 +239,29 @@ describe('applyCuration — drop-as-known', () => {
   })
 })
 
+describe('applyCuration invalid session numbers', () => {
+  it('returns a request-stage refusal for an out-of-range session number', () => {
+    const plan = clonePlan(fixturePlan)
+    const replacement = replacementSessionFor(plan, 3)
+    replacement.number = 15
+    const request: RedoSessionRequest = {
+      intent: 'redo-session',
+      at: '2026-02-10T00:00:00.000Z',
+      sessionNumber: 15,
+      replacement,
+    }
+    try {
+      applyCuration(plan, request)
+      throw new Error('expected refusal')
+    } catch (error) {
+      expect(error).toBeInstanceOf(CurationRefusedError)
+      const refusal = error as CurationRefusedError
+      expect(refusal.stage).toBe('request')
+      expect(refusal.reasons[0]).toMatch(/sessionNumber.*1 through 14/i)
+    }
+  })
+})
+
 describe('applyCuration — swap-material', () => {
   it('Scenario 7: swapping the only free material succeeds (replacement is free); session keeps its other fields', () => {
     const plan = clonePlan(fixturePlan)
