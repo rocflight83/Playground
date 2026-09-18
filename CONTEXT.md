@@ -98,5 +98,5 @@ _Avoid_: validation (which is the structural check of plan data), link check
 
 **Intelligence**:
 Whatever produces plan prose and replacements — the `/study-plan` skill today,
-the app's prompts later. Never the shell.
+the app's prompts later. Never the shell. Its policy lives in `prompts/`.
 _Avoid_: the model, the AI, the generator

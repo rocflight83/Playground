@@ -44,6 +44,13 @@ Ticket 15 adds the curation intent model: three intents — `drop-as-known`,
 `src/curation.ts` (a pure function) plus `curatePlanDir(planDir, request,
 options)` in `src/maintenance.ts` and `npm run curate`; `PlanData.curationLog?`
 records every applied curation; `redoSession` is now a thin wrapper.
+Ticket 16 makes the planning policy provider-neutral: `prompts/policy.md`
+is the shared intelligence policy (honest-target test, DISSS, the session
+shape, the sourcing rules, the Preferred / Practitioner source lists);
+`prompts/generate.md`, `prompts/replace-session.md` and
+`prompts/replace-material.md` are the path-specific duties. The
+`/study-plan` skill becomes a thin front door that reads them; the local
+app's `Intelligence` adapter will read the same files.
 
 ## Build and test commands
 
@@ -107,9 +114,23 @@ be followed downstream):
 
 ## Architecture notes
 
-- `.claude/skills/study-plan/SKILL.md` — the `/study-plan` skill: the planning
-  intelligence (DISSS, CAFE, scope honesty, sourcing policy) and the only place
-  plan prose is authored.
+- `prompts/` (repo root) — the planning intelligence's shared policy and
+  duty files, read by every prompt. `prompts/policy.md` carries the
+  honest-target test, DISSS, the session shape and CAFE rules, the sourcing
+  policy (two-lane search, per-publisher cap, practitioner tier, off-list
+  bar, anchors, paid-material rule, consumption-time durations,
+  deliverable-template rule, outlier-story rule), and the Preferred /
+  Practitioner source lists. `prompts/generate.md`,
+  `prompts/replace-session.md` and `prompts/replace-material.md` are the
+  path-specific duties. The policy files contain no commands and no
+  `plan.json` references — those live in the front door.
+- `.claude/skills/study-plan/SKILL.md` — the `/study-plan` skill, a thin
+  front door: frontmatter, inputs, the operational sections (how to write
+  the plan data, run the shell commands, read their JSON summaries), and
+  the curation request shapes with pointers at `prompts/replace-session.md`
+  and `prompts/replace-material.md`. The policy itself lives in
+  `prompts/`; the front door and the local app's `Intelligence` adapter
+  both read it.
 - `src/plan-types.ts` — the plan data model (meta, scope note, DISSS preamble,
   stakes, phases, sessions with their CAFE fields, materials, verification
   records, outlier stories with their own `verification` records, the
