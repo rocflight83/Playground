@@ -100,3 +100,15 @@ _Avoid_: validation (which is the structural check of plan data), link check
 Whatever produces plan prose and replacements — the `/study-plan` skill today,
 the app's prompts later. Never the shell. Its policy lives in `prompts/`.
 _Avoid_: the model, the AI, the generator
+
+### The app
+
+**Store**:
+Where plans, their exports and the learner's progress are kept: the plan
+directory today, a database later.
+_Avoid_: database, files
+
+**Job**:
+One in-flight generate, curate or verify request and its stage. Lives in
+memory, never in the plan.
+_Avoid_: task, operation

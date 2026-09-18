@@ -15,7 +15,8 @@ import { ALREADY_KNOWN_MARKER, CONSOLIDATION_SLOTS, consolidationSlotsDescriptio
 import type { Material, PlanData, Session } from './plan-types.ts'
 import type { CurationRecord } from './plan-types.ts'
 import { validatePlan } from './validation.ts'
-import type { VerificationReport } from './verification.ts'
+import type { VerificationReport, VerifyPlanOptions } from './verification.ts'
+import { verifyPlan } from './verification.ts'
 
 interface CurationRequestBase {
   /** ISO timestamp supplied by the caller; recorded on the log entry. */
@@ -268,4 +269,176 @@ export function applyCuration(plan: PlanData, request: CurationRequest): PlanDat
     throw new CurationRefusedError(mergedErrors, 'merged-plan')
   }
   return next
+}
+
+/**
+ * Surface the structural refusals a curation request would raise at the
+ * `request` stage, without mutating the plan. The Planner calls this before
+ * the intelligence so a frame-level problem (consolidation-slot drop, invalid
+ * session number, replacement-number mismatch) refuses without an expensive
+ * network round. Replacement-content checks (paid replacement, knownSummary
+ * emptiness, budget overflow, material URL not in session) require the
+ * replacement itself and are surfaced by `applyCuration` once the
+ * intelligence has produced one.
+ *
+ * Implementation: applies the request with a placeholder replacement that's
+ * structurally valid for its intent (correct number, no paid flag, free
+ * material, non-empty knownSummary). Any `CurationRefusedError` raised at
+ * stage `request` is reported as reasons; any other stage means a frame
+ * check uncovered nothing and the request is structurally clear.
+ */
+export function checkCurationRequest(plan: PlanData, request: CurationRequest): string[] {
+  const placeholder = placeholderRequest(request)
+  try {
+    applyCuration(plan, placeholder)
+    return []
+  } catch (err) {
+    if (err instanceof CurationRefusedError && err.stage === 'request') {
+      return err.reasons
+    }
+    return []
+  }
+}
+
+/**
+ * Build a copy of the request whose replacement-shaped fields are filled
+ * with a structurally-valid placeholder. The placeholder matches
+ * `sessionNumber` and carries no paid material, an empty knownSummary, and a
+ * reasonable budget — i.e. it satisfies the checks that do not depend on
+ * what the intelligence will eventually return, so any remaining refusal is
+ * one of the frame checks the caller wants to surface.
+ */
+function placeholderRequest(request: CurationRequest): CurationRequest {
+  const at = request.at
+  const sessionNumber = request.sessionNumber
+  if (request.intent === 'redo-session') {
+    return {
+      intent: 'redo-session',
+      at,
+      sessionNumber,
+      replacement: placeholderSessionFor(sessionNumber),
+    }
+  }
+  if (request.intent === 'drop-as-known') {
+    return {
+      intent: 'drop-as-known',
+      at,
+      sessionNumber,
+      known: request.known,
+      knownSummary: 'placeholder knownSummary',
+      replacement: placeholderSessionFor(sessionNumber),
+    }
+  }
+  // swap-material: keep `by` (the chosen path governs which refusal reasons
+  // apply) and use its url as the placeholder so the url-path equality check
+  // passes. The placeholder material is otherwise minimal and free.
+  const placeholderUrl = 'url' in request.by ? request.by.url : 'https://placeholder.invalid/frame-check'
+  return {
+    intent: 'swap-material',
+    at,
+    sessionNumber,
+    materialUrl: request.materialUrl,
+    by: request.by,
+    replacement: placeholderMaterial(placeholderUrl),
+  }
+}
+
+function placeholderMaterial(url: string): Material {
+  return {
+    title: 'placeholder material',
+    url,
+    sourceType: 'preferred',
+    estimatedDuration: 1,
+    paid: false,
+    verification: { status: 'verified-by-status', checkedAt: null },
+  }
+}
+
+function placeholderSessionFor(sessionNumber: number): Session {
+  return {
+    number: sessionNumber,
+    title: 'placeholder session',
+    artifactOneLiner: 'placeholder artifact',
+    materials: [placeholderMaterial('https://placeholder.invalid/frame-check')],
+    selfCheck: 'placeholder self-check',
+    estimatedTime: 60,
+    highFrequencyUnits: [],
+  }
+}
+
+/**
+ * Apply one curation, verify what changed, validate the result. The
+ * filesystem-free heart of curation mode. `src/maintenance.ts` is this
+ * function plus the two-file write; the Planner (issue 17) calls it
+ * directly so the curation log record, verification report, and refused
+ * outcome stay in one place.
+ */
+export interface CuratePlanOptions extends VerifyPlanOptions {}
+
+export async function curatePlan(
+  plan: PlanData,
+  request: CurationRequest,
+  options: CuratePlanOptions
+): Promise<CurationOutcome> {
+  const inputErrors = validatePlan(plan)
+  if (inputErrors.length > 0) {
+    return { status: 'refused', reasons: inputErrors, stage: 'request' }
+  }
+
+  let merged: PlanData
+  try {
+    merged = applyCuration(plan, request)
+  } catch (err) {
+    if (err instanceof CurationRefusedError) {
+      return { status: 'refused', reasons: err.reasons, stage: err.stage }
+    }
+    throw err
+  }
+
+  const verifyOpts: VerifyPlanOptions = {
+    ...options,
+    keepOutlierStoriesOnFailure: true,
+  }
+  if (request.intent === 'swap-material' && 'url' in request.by) {
+    verifyOpts.noSubstitution = true
+    verifyOpts.sessionNumbers = [request.sessionNumber]
+    verifyOpts.materialUrls = [request.replacement.url]
+    verifyOpts.forceContentCheckUrls = [request.replacement.url]
+  } else if (request.intent === 'swap-material') {
+    verifyOpts.sessionNumbers = [request.sessionNumber]
+    verifyOpts.materialUrls = [request.replacement.url]
+  } else {
+    verifyOpts.sessionNumbers = [request.sessionNumber]
+  }
+
+  const { plan: verified, report } = await verifyPlan(merged, verifyOpts)
+
+  if (
+    request.intent === 'swap-material' &&
+    'url' in request.by &&
+    report.outcomes.some((outcome) => outcome.status === 'unresolved-after-retries')
+  ) {
+    const failedUrl = request.replacement.url
+    return {
+      status: 'refused',
+      stage: 'verification',
+      reasons: [`<${failedUrl}> could not be verified: unresolved-after-retries`],
+    }
+  }
+
+  const verifiedErrors = validatePlan(verified)
+  if (verifiedErrors.length > 0) {
+    return { status: 'refused', reasons: verifiedErrors, stage: 'verification' }
+  }
+
+  const record = verified.curationLog?.[verified.curationLog.length - 1]
+  if (!record) {
+    return {
+      status: 'refused',
+      stage: 'request',
+      reasons: ['curation produced no log record; the request did not change the plan'],
+    }
+  }
+
+  return { status: 'applied', plan: verified, report, record }
 }

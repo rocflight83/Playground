@@ -9,11 +9,11 @@ import { validatePlan } from './validation.ts'
 import type { VerificationReport, VerifyPlanOptions } from './verification.ts'
 import { verifyPlan } from './verification.ts'
 import {
-  CurationRefusedError,
-  type CurationOutcome,
   type CurationRequest,
-  applyCuration,
+  type CurationOutcome,
+  curatePlan,
 } from './curation.ts'
+export type { CuratePlanOptions } from './curation.ts'
 
 export interface MaintenanceResult {
   planDir: string
@@ -180,6 +180,11 @@ export async function reverifyPlanDir(
  * merged plan validates, the verified plan validates again, and the
  * write succeeds atomically.
  *
+ * The fs-free core of curation is `curatePlan` in `src/curation.ts`;
+ * `curatePlanDir` is `curatePlan` plus the directory I/O. The Planner
+ * (issue 17) calls `curatePlan` directly so it does not need a filesystem
+ * adapter on the curation path.
+ *
  * For `swap-material` on the url path, a learner-supplied URL that fails
  * verification is a refusal at stage `verification`, not an unresolved
  * slot: a URL the learner chose is either admitted as they chose it or
@@ -202,112 +207,21 @@ export async function curatePlanDir(
   const raw = await fs.readFile(planPath)
   const original = JSON.parse(raw) as PlanData
 
-  const inputErrors = validatePlan(original)
-  if (inputErrors.length > 0) {
-    return {
-      planDir,
-      planPath,
-      htmlPath,
-      outcome: { status: 'refused', reasons: inputErrors, stage: 'request' },
-    }
-  }
+  const outcome = await curatePlan(original, request, options)
 
-  let merged: PlanData
-  try {
-    merged = applyCuration(original, request)
-  } catch (err) {
-    if (err instanceof CurationRefusedError) {
-      return {
-        planDir,
-        planPath,
-        htmlPath,
-        outcome: { status: 'refused', reasons: err.reasons, stage: err.stage },
-      }
-    }
-    throw err
-  }
-
-  const verifyOpts: VerifyPlanOptions = {
-    ...options,
-    keepOutlierStoriesOnFailure: true,
-  }
-  // Filter verification to what changed. Swap-material on the url path also
-  // needs noSubstitution: a learner-supplied URL is admitted on its merits
-  // or refused, never silently swapped for another.
-  if (request.intent === 'swap-material' && 'url' in request.by) {
-    verifyOpts.noSubstitution = true
-    verifyOpts.sessionNumbers = [request.sessionNumber]
-    verifyOpts.materialUrls = [request.replacement.url]
-    verifyOpts.forceContentCheckUrls = [request.replacement.url]
-  } else if (request.intent === 'swap-material') {
-    verifyOpts.sessionNumbers = [request.sessionNumber]
-    verifyOpts.materialUrls = [request.replacement.url]
-  } else {
-    verifyOpts.sessionNumbers = [request.sessionNumber]
-  }
-
-  const { plan: verified, report } = await verifyPlan(merged, verifyOpts)
-
-  // On the swap-material url path, an unresolved-after-retries is a refusal,
-  // not a written-with-warning. Other intents keep the existing redo
-  // behaviour: a failed material is written with the warning.
-  if (
-    request.intent === 'swap-material' &&
-    'url' in request.by &&
-    report.outcomes.some((outcome) => outcome.status === 'unresolved-after-retries')
-  ) {
-    const failedUrl = request.replacement.url
-    return {
-      planDir,
-      planPath,
-      htmlPath,
-      outcome: {
-        status: 'refused',
-        stage: 'verification',
-        reasons: [`<${failedUrl}> could not be verified: unresolved-after-retries`],
-      },
-    }
-  }
-
-  const verifiedErrors = validatePlan(verified)
-  if (verifiedErrors.length > 0) {
-    return {
-      planDir,
-      planPath,
-      htmlPath,
-      outcome: { status: 'refused', reasons: verifiedErrors, stage: 'verification' },
-    }
-  }
-
-  const record = verified.curationLog?.[verified.curationLog.length - 1]
-  if (!record) {
-    // applyCuration should always append a record. If it didn't, refuse.
-    return {
-      planDir,
-      planPath,
-      htmlPath,
-      outcome: {
-        status: 'refused',
-        stage: 'request',
-        reasons: ['curation produced no log record; the request did not change the plan'],
-      },
-    }
+  if (outcome.status === 'refused') {
+    return { planDir, planPath, htmlPath, outcome }
   }
 
   await writeMaintenanceFiles(
     fs,
     planPath,
     htmlPath,
-    JSON.stringify(verified, null, 2),
-    renderPlan(verified)
+    JSON.stringify(outcome.plan, null, 2),
+    renderPlan(outcome.plan)
   )
 
-  return {
-    planDir,
-    planPath,
-    htmlPath,
-    outcome: { status: 'applied', plan: verified, report, record },
-  }
+  return { planDir, planPath, htmlPath, outcome }
 }
 
 /**

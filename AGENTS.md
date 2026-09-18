@@ -9,16 +9,29 @@ structured **plan data** into a single self-contained HTML page and, later,
 verifies links. The generator never emits HTML directly — data and rendering
 are strictly separated.
 
-Current state: tickets 01–08 are in place — the renderer seam, progress
+Current state: tickets 01–16 are in place — the renderer seam, progress
 state, validation + verification, generate mode, sourcing depth
 (tiered discovery with off-list admission), scope honesty (a reframed
 target and its scope note are validated as a pair and rendered together),
-outlier stories (real, citable, removable when uncited), and
-verify-on-demand mode (`src/maintenance.ts` + `npm run verify`). Ticket 09
-adds per-session redo mode: a session-numbers filter on `verifyPlan` plus
-`redoSession` in `src/maintenance.ts` and `npm run redo` so one named
-session can be replaced in place while the other thirteen, browser
-progress, and the directory name all survive untouched (see
+outlier stories (real, citable, removable when uncited),
+verify-on-demand mode (`src/maintenance.ts` + `npm run verify`), per-session
+redo mode, source breadth (publisher cap + practitioner tier), honest
+material durations, deliverable templates, the curation intent model
+(`drop-as-known`, `swap-material`, `redo-session` with the fs-free
+`curatePlan` extracted to `src/curation.ts`), and the shared
+`prompts/policy.md` policy that makes the `/study-plan` skill a thin
+front door. Ticket 17 adds the app's core under `src/app/`: a
+provider-neutral `PlanStore` seam with `FilePlanStore` and
+`MemoryPlanStore` adapters, an `Intelligence` seam with a `ScriptedIntelligence`
+test double, a `withLimits` helper (`src/app/limits.ts`) that wraps a
+fetcher with a per-call timeout and a counting semaphore, and a `Planner`
+that owns the generate / curate / verify workflows as jobs with the
+lifecycle `requested → sourcing → verifying → applied | refused | failed`.
+A single in-flight job per plan is enforced (`PlanBusyError`); frame
+refusals cost no intelligence call (the `checkCurationRequest` seam in
+`src/curation.ts`); the `searchReplacement` callback is wired to
+`intelligence.findReplacementUrl`. Ticket 18 puts an HTTP surface over
+this; ticket 19 adds the real provider adapter (see
 `.scratch/study-plan-generator/`). Ticket 12 adds source breadth:
 `src/publisher.ts` (a pure `publisherKey(url)` that maps a material URL
 to its publisher — registrable domain with hosting-platform tenant
@@ -155,7 +168,11 @@ be followed downstream):
   `Date`, no mutation. The original session or material that was replaced
   is preserved verbatim on the appended log record so a later undo can
   restore it. Also defines the request types (`CurationRequest` and its
-  three variants), `CurationOutcome`, and `CurationRefusedError`.
+  three variants), `CurationOutcome`, `CurationRefusedError`, and the
+  fs-free `curatePlan(plan, request, options)` core `curatePlanDir`
+  uses (and the Planner uses). `checkCurationRequest(plan, request)`
+  surfaces the structural refusals at stage `request` so the Planner's
+  frame check costs no intelligence call.
 - `src/publisher.ts` — `publisherKey(url): string | null`, a pure function
   that maps a material URL to the publisher the per-publisher cap counts.
   Reduces subdomains to the registrable domain (`cdn.cboe.com` =
@@ -224,17 +241,54 @@ be followed downstream):
   browser progress (keyed by session number) survives untouched. Unresolved
   materials keep their original title and URL with status
   `unresolved-after-retries`; the renderer surfaces the warning. Also exports
-  `curatePlanDir(planDir, request, options)` which reads the existing
-  `plan.json`, validates it, runs `applyCuration` (a pure function),
-  validates the merged plan, re-verifies only the targeted session (and
-  on the swap-material url path, only the swapped URL with
-  `noSubstitution` so a learner-supplied URL is either admitted or refused),
-  validates the verified plan, and writes both files in place. Refusals at
-  any stage leave the directory byte-identical. `redoSession(planDir,
-  sessionNumber, replacement, ...)` is now a thin wrapper that builds a
-  `RedoSessionRequest` (with `at` from `options.now?.() ?? new Date()
-  .toISOString()`) and calls `curatePlanDir`, keeping its number-mismatch
-  error message verbatim so the existing CLI and tests pass unchanged.
+  `curatePlanDir(planDir, request, options)` which is read + `curatePlan`
+  (from `src/curation.ts`) + write: read the existing `plan.json`, validate
+  it, run `applyCuration` (a pure function), validate the merged plan,
+  re-verify only the targeted session (and on the swap-material url path,
+  only the swapped URL with `noSubstitution` so a learner-supplied URL is
+  either admitted or refused), validate the verified plan, and write both
+  files in place. Refusals at any stage leave the directory byte-identical.
+  `redoSession(planDir, sessionNumber, replacement, ...)` is a thin wrapper
+  that builds a `RedoSessionRequest` (with `at` from `options.now?.() ??
+  new Date().toISOString()`) and calls `curatePlanDir`, keeping its
+  number-mismatch error message verbatim so the existing CLI and tests
+  pass unchanged.
+- `src/app/plan-store.ts` — the persistence seam the Planner uses. A
+  `PlanStore` interface (`list`, `read`, `create`, `write`,
+  `readProgress`, `writeProgress`) with `FilePlanStore(baseDir, { fs? })`
+  for production and `MemoryPlanStore()` for tests. `create` allocates
+  the directory and seeds `plan.json`; `write` validates, renders and
+  writes `plan.json` and `index.html` together, so the file:// export
+  always matches the data — nothing else in the app writes plan files.
+- `src/app/intelligence.ts` — the provider-neutral seam for whoever
+  produces plan prose and replacements. The `Intelligence` interface
+  declares `generatePlan`, `replaceSession`, `replaceMaterial`, and
+  `findReplacementUrl`. Return types are `unknown` so the Planner trusts
+  nothing until `validatePlan` has accepted it. `ScriptedIntelligence`
+  is the test double: each method dequeues the next scripted answer
+  (or `{ throw }`) and records every call so a test asserts on
+  sequence rather than the network.
+- `src/app/limits.ts` — `withLimits(fetch, { timeoutMs, concurrency })`
+  wraps a `FetchLike` with `AbortSignal.timeout` and a counting
+  semaphore. The shell's `verifyPlan` has neither today and must not
+  grow them — they are the caller's concern. `withLimits` is exported
+  so ticket 18 and the CLI scripts can adopt it; default timeout is 15 s
+  and default concurrency is 4.
+- `src/app/planner.ts` — the only module with a workflow. `Planner` owns
+  the generate, curate and verify jobs and exposes them through
+  `planner.generate(brief)`, `planner.curate(planId, request)`, and
+  `planner.verify(planId)`. Every job moves through the lifecycle
+  `requested → sourcing → verifying → applied | refused | failed`; one
+  in-flight job per plan is enforced (`PlanBusyError`). The Planner
+  wraps the verification `fetch` in `withLimits` and wires
+  `searchReplacement` to `intelligence.findReplacementUrl`. Generate
+  runs up to two repair rounds when `validatePlan` rejects the
+  intelligence's answer, passing the prior attempt and errors back; a
+  third failure ends in `failed`. Curate runs the frame check first
+  (frame refusals cost no intelligence call) and then assembles the
+  full `CurationRequest` once the intelligence has returned. The
+  Planner never re-implements `validatePlan`, `verifyPlan`, `renderPlan`,
+  or `applyCuration` — it orchestrates the shell.
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,
