@@ -15,7 +15,7 @@ import { FilePlanStore } from '../src/app/plan-store.ts'
 import { Planner, type Job } from '../src/app/planner.ts'
 import type { XaiUsage } from '../src/app/intelligence-xai.ts'
 import type { MaterialVerificationOutcome, VerificationOutcome } from '../src/verification.ts'
-import { pickIntelligence } from './wire-intelligence.ts'
+import { intelligenceName, pickIntelligence } from './wire-intelligence.ts'
 
 /** List prices from #13's research, checked 2026-09-15. */
 const RATES = {
@@ -126,6 +126,14 @@ async function main(): Promise<void> {
   const hoursPerDay = Number(hoursArg)
   if (!subject || !currentLevel || !targetCapability || !(hoursPerDay > 0)) {
     console.error('Usage: npm run dry-run -- <subject> <level> <hours> <target>')
+    process.exitCode = 2
+    return
+  }
+
+  if (intelligenceName(process.env) !== 'xai') {
+    console.error(
+      'The provider dry run requires STUDY_PLAN_INTELLIGENCE=xai and XAI_API_KEY; configure them in the environment or .env.'
+    )
     process.exitCode = 2
     return
   }
