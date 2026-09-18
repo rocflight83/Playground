@@ -230,6 +230,7 @@ describe('Planner.curate', () => {
     const store = new MemoryPlanStore()
     const intelligence = new ScriptedIntelligence()
     const initial = makePlan()
+    initial.sessions[2].highFrequencyUnits.push('dropped-only unit')
     await store.create(initial)
     const replacementSession = makeReplacementSession(3)
     intelligence.enqueueSession({
@@ -265,6 +266,7 @@ describe('Planner.curate', () => {
     expect(ctx.droppedUnits.length).toBeGreaterThan(0)
     expect(typeof ctx.extendedCurrentLevel).toBe('string')
     expect(Array.isArray(ctx.atRiskUnits)).toBe(true)
+    expect(ctx.atRiskUnits).toContain('dropped-only unit')
   })
 
   it('Scenario 6: a drop on a consolidation slot refuses at stage `request`; the intelligence is never called', async () => {
@@ -307,18 +309,21 @@ describe('Planner.curate', () => {
       return { ok: true, status: 200, text: async () => 'placeholder body' }
     }
     const planner = new Planner({ store, intelligence, fetch: fetchImpl })
+    intelligence.enqueueMaterial(replacementMaterial)
     const job = planner.curate('python-programming', {
       intent: 'swap-material',
       sessionNumber: 3,
       materialUrl: initialPlan.sessions.find((s) => s.number === 3)!.materials[0].url,
       by: { url: deadUrl },
-      replacement: replacementMaterial,
     })
     await waitForTerminal(job)
 
     expect(job.stage).toBe('refused')
     const refused = refusedResult(job)
     expect(refused.stage).toBe('verification')
+    const materialCall = intelligence.calls.find((call) => call.method === 'replaceMaterial')
+    expect(materialCall).toBeDefined()
+    expect((materialCall!.args[0] as { remainingMinutes: number }).remainingMinutes).toBeGreaterThan(0)
     expect(intelligence.calls.find((c) => c.method === 'findReplacementUrl')).toBeUndefined()
     const stored = await store.read('python-programming')
     expect(stored.curationLog ?? []).toEqual([])
@@ -341,6 +346,29 @@ describe('Planner.curate', () => {
     ).toThrow(/in-flight/i)
     expect(() => planner.verify('python-programming')).toThrow(/in-flight/i)
     await waitForTerminal(verifyA)
+  })
+
+  it('redo-session sources its replacement through Intelligence and preserves the reason context', async () => {
+    const store = new MemoryPlanStore()
+    const intelligence = new ScriptedIntelligence()
+    const initialPlan = makePlan()
+    await store.create(initialPlan)
+    const replacementSession = makeReplacementSession(3)
+    intelligence.enqueueSession({ session: replacementSession })
+    const planner = new Planner({ store, intelligence, fetch: buildEchoingFetch(initialPlan) })
+
+    const job = planner.curate('python-programming', {
+      intent: 'redo-session',
+      sessionNumber: 3,
+      reason: 'The material was too shallow',
+    })
+    await waitForTerminal(job)
+
+    expect(job.stage).toBe('applied')
+    const call = intelligence.calls.find((entry) => entry.method === 'replaceSession')
+    expect(call).toBeDefined()
+    expect((call!.args[0] as { intent: string; reason?: string }).intent).toBe('redo-session')
+    expect((call!.args[0] as { reason?: string }).reason).toBe('The material was too shallow')
   })
 })
 

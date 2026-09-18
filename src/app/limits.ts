@@ -47,7 +47,9 @@ export const withLimits: LimitedFetchFactory = (impl, options = {}) => {
   const wrapped: LimitedFetch = async (url, externalSignal) => {
     await semaphore.acquire()
     const timeoutController = new AbortController()
-    const timer = setTimeout(() => timeoutController.abort(), timeoutMs)
+    const timeoutSignal = AbortSignal.timeout(timeoutMs)
+    const forwardTimeout = () => timeoutController.abort()
+    timeoutSignal.addEventListener('abort', forwardTimeout)
     const forwardAbort = () => timeoutController.abort()
     if (externalSignal) {
       if (externalSignal.aborted) timeoutController.abort()
@@ -56,7 +58,7 @@ export const withLimits: LimitedFetchFactory = (impl, options = {}) => {
     try {
       return await impl(url, timeoutController.signal)
     } finally {
-      clearTimeout(timer)
+      timeoutSignal.removeEventListener('abort', forwardTimeout)
       if (externalSignal) externalSignal.removeEventListener('abort', forwardAbort)
       semaphore.release()
     }

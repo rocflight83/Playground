@@ -122,13 +122,11 @@ export type CurateCallerRequest =
       sessionNumber: number
       materialUrl: string
       by: { reason: string } | { url: string }
-      replacement: Material
     }
   | {
       intent: 'redo-session'
       sessionNumber: number
       reason?: string
-      replacement: Session
     }
 
 export class Planner {
@@ -338,7 +336,7 @@ export class Planner {
 
       const opts: CuratePlanOptions = {
         fetch: this.fetch,
-        searchReplacement: () => Promise.resolve(null),
+        searchReplacement: this.buildSearchReplacement(),
       }
       const outcome = await curatePlan(plan, finalRequest, opts)
       if (outcome.status === 'refused') {
@@ -358,10 +356,21 @@ export class Planner {
     request: CurateCallerRequest
   ): Promise<CurateSourcingResult> {
     if (request.intent === 'swap-material') {
-      // For swap-material, the caller supplies the replacement material
-      // (either a learner's URL or a reason). The intelligence is never
-      // consulted; the frame check has already validated the request shape.
-      return { material: request.replacement }
+      const session = plan.sessions.find((s) => s.number === request.sessionNumber)
+      if (!session) throw new Error(`plan has no session ${request.sessionNumber}`)
+      const material = session.materials.find((m) => m.url === request.materialUrl)
+      if (!material) throw new Error(`plan has no material ${request.materialUrl}`)
+      const remainingMinutes = session.estimatedTime - session.materials
+        .filter((candidate) => candidate.url !== request.materialUrl)
+        .reduce((sum, candidate) => sum + candidate.estimatedDuration, 0)
+      const replacement = await this.intelligence.replaceMaterial({
+        plan,
+        session,
+        material,
+        by: request.by,
+        remainingMinutes,
+      })
+      return { material: replacement as Material }
     }
     const session = plan.sessions.find((s) => s.number === request.sessionNumber)
     if (!session) throw new Error(`plan has no session ${request.sessionNumber}`)
@@ -433,15 +442,14 @@ function stageCurationRequest(
     at,
     sessionNumber: request.sessionNumber,
     ...(request.reason !== undefined ? { reason: request.reason } : {}),
-    replacement: request.replacement,
+    replacement: placeholderSession(request.sessionNumber),
   }
 }
 
 /**
  * Build the full `CurationRequest` once the intelligence has returned the
- * replacement. The caller's `replacement` on a drop-as-known is empty (it
- * arrives from the intelligence); a swap-material's call-time replacement
- * is the learner-supplied material; a redo-session's is the caller's.
+ * replacement. The caller supplies only the frame and learner input; all
+ * replacement content arrives from the intelligence.
  */
 function assembleCurationRequest(
   _plan: PlanData,
@@ -507,6 +515,8 @@ function placeholderMaterial(url?: string): Material {
 
 function computeAtRiskUnits(plan: PlanData, excludeSessionNumber: number): string[] {
   const counts = new Map<string, number>()
+  const excluded = plan.sessions.find((session) => session.number === excludeSessionNumber)
+  for (const unit of new Set(excluded?.highFrequencyUnits ?? [])) counts.set(unit, 0)
   for (const session of plan.sessions) {
     if (session.number === excludeSessionNumber) continue
     for (const unit of new Set(session.highFrequencyUnits ?? [])) {
@@ -528,7 +538,7 @@ function computeAtRiskUnits(plan: PlanData, excludeSessionNumber: number): strin
 function limitFetch(impl: FetchLike, timeoutMs: number, concurrency: number): FetchLike {
   const adapter: LimitedFetch = async (url, signal) => {
     if (signal?.aborted) throw new Error('aborted')
-    return (await impl(url)) as unknown as Response
+    return (await impl(url, signal ? { signal } : undefined)) as unknown as Response
   }
   const wrapped = withLimits(adapter, { timeoutMs, concurrency })
   return async (url) => {

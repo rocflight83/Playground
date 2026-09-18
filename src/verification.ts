@@ -10,7 +10,7 @@ export interface FetchResponse {
   text(): Promise<string>
 }
 
-export type FetchLike = (url: string) => Promise<FetchResponse>
+export type FetchLike = (url: string, init?: RequestInit) => Promise<FetchResponse>
 
 export interface ReplacementCandidate {
   title: string

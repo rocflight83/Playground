@@ -1,5 +1,6 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { FileSystemAdapter } from './filesystem.ts'
+import { nodeFileSystem } from './filesystem.ts'
 import type { PlanData } from './plan-types.ts'
 import { renderPlan } from './renderer.ts'
 import { slugify } from './slug.ts'
@@ -7,32 +8,7 @@ import { validatePlan } from './validation.ts'
 import type { VerificationReport, VerifyPlanOptions } from './verification.ts'
 import { verifyPlan } from './verification.ts'
 
-export interface FileSystemAdapter {
-  exists(path: string): Promise<boolean>
-  mkdir(path: string): Promise<void>
-  writeFile(path: string, content: string): Promise<void>
-  readFile(path: string): Promise<string>
-  /** Writes a related file set as one maintenance transaction when supported. */
-  writeFilesAtomically?(files: Array<{ path: string; content: string }>): Promise<void>
-}
-
-const nodeFileSystem: FileSystemAdapter = {
-  exists: async (path) => {
-    try {
-      await access(path)
-      return true
-    } catch {
-      return false
-    }
-  },
-  mkdir: async (path) => {
-    await mkdir(path, { recursive: true })
-  },
-  writeFile: async (path, content) => {
-    await writeFile(path, content, 'utf8')
-  },
-  readFile: async (path) => readFile(path, 'utf8'),
-}
+export type { FileSystemAdapter } from './filesystem.ts'
 
 /**
  * Generation is verification plus a place to put the result, so it takes the

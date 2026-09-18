@@ -11,9 +11,10 @@
  * `generatePlan` already uses, lifted into a shared type so both seams can
  * be exercised against the same in-memory fs in tests.
  */
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ValidationFailedError } from '../generate.ts'
+import type { FileSystemAdapter } from '../filesystem.ts'
+import { nodeFileSystem } from '../filesystem.ts'
 import type { PlanData } from '../plan-types.ts'
 import { renderPlan } from '../renderer.ts'
 import { slugify } from '../slug.ts'
@@ -32,20 +33,7 @@ export type Progress = Record<string, unknown>
  * The minimum filesystem surface the store needs. `generatePlan` already
  * uses the same shape; reusing it keeps the in-memory test adapter single.
  */
-export interface FileSystemAdapter {
-  exists(path: string): Promise<boolean>
-  mkdir(path: string): Promise<void>
-  writeFile(path: string, content: string): Promise<void>
-  readFile(path: string): Promise<string>
-  /**
-   * List the immediate entries of a directory, each tagged with whether it
-   * is a directory. Optional: a store on a real filesystem can fall back to
-   * `node:fs/promises`'s `readdir`; a store on an in-memory adapter needs it
-   * explicitly.
-   */
-  readdir?(path: string): Promise<Array<{ name: string; isDirectory: boolean }>>
-  writeFilesAtomically?(files: Array<{ path: string; content: string }>): Promise<void>
-}
+export type { FileSystemAdapter } from '../filesystem.ts'
 
 /**
  * Optional test-only hooks a fs adapter may expose so `FilePlanStore` can be
@@ -208,8 +196,8 @@ export class FilePlanStore implements PlanStore {
   private async readdirEntries(path: string): Promise<Array<{ name: string; isDirectory: boolean }>> {
     if (this.fs.readdir) return this.fs.readdir(path)
     const { readdir } = await import('node:fs/promises')
-    const raw = await readdir(path, { withFileTypes: true })
-    return raw.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))
+    const entries = await readdir(path, { withFileTypes: true })
+    return entries.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }))
   }
 
   async read(id: string): Promise<PlanData> {
@@ -224,7 +212,9 @@ export class FilePlanStore implements PlanStore {
     const planDir = await freeId(this.fs, this.baseDir, baseSlug)
     const id = planDir.split(/[\\/]/).pop()!
     await this.fs.mkdir(planDir)
-    await this.fs.writeFile(join(planDir, 'plan.json'), JSON.stringify(plan, null, 2))
+    const planFile = { path: join(planDir, 'plan.json'), content: JSON.stringify(plan, null, 2) }
+    if (this.fs.writeFilesAtomically) await this.fs.writeFilesAtomically([planFile])
+    else await this.fs.writeFile(planFile.path, planFile.content)
     return id
   }
 
@@ -281,27 +271,4 @@ export class FilePlanStore implements PlanStore {
     if (hooks.lastReadFile) return hooks.lastReadFile(path)
     return ''
   }
-}
-
-/**
- * The Node-default adapter. `generatePlan` uses a slightly different one
- * (it does not implement `writeFilesAtomically`), so we keep a dedicated
- * copy that exposes the test hooks only when wired to one.
- */
-const nodeFileSystem: FileSystemAdapter = {
-  exists: async (path) => {
-    try {
-      await access(path)
-      return true
-    } catch {
-      return false
-    }
-  },
-  mkdir: async (path) => {
-    await mkdir(path, { recursive: true })
-  },
-  writeFile: async (path, content) => {
-    await writeFile(path, content, 'utf8')
-  },
-  readFile: async (path) => readFile(path, 'utf8'),
 }
