@@ -18,6 +18,8 @@ from the network.
 
 - `npm run generate -- <plan.json> [baseDir]` — generate mode: validate, verify
   and render a plan the `/study-plan` skill produced
+- `npm run app` — the local app (plan list, live page, export, API) on
+  `http://127.0.0.1:4321/`
 - `npm test` — run the suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (must stay clean)

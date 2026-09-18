@@ -160,3 +160,40 @@ async function resolveScripted<T>(entry: ScriptedQueueEntry<T>): Promise<T> {
   if (entry.throw !== undefined) throw entry.throw
   return entry.answer as T
 }
+
+/**
+ * Thrown by an intelligence that has no provider behind it. The Planner
+ * turns it into a `failed` job carrying this message, so the app runs —
+ * plan list, live page, progress, export, import and verify jobs — before
+ * a real adapter exists (ticket 19).
+ */
+export class IntelligenceUnavailableError extends Error {
+  constructor(message = 'no provider configured; see ticket 19') {
+    super(message)
+    this.name = 'IntelligenceUnavailableError'
+  }
+}
+
+/**
+ * The intelligence the app wires when `STUDY_PLAN_INTELLIGENCE=scripted`
+ * (the default): every generate / replace call fails with
+ * `IntelligenceUnavailableError`; `findReplacementUrl` answers `null` so a
+ * verify job can still run and record a dead link as unresolved.
+ */
+export class UnavailableIntelligence implements Intelligence {
+  async generatePlan(): Promise<unknown> {
+    throw new IntelligenceUnavailableError()
+  }
+
+  async replaceSession(): Promise<{ session: unknown; knownSummary?: string }> {
+    throw new IntelligenceUnavailableError()
+  }
+
+  async replaceMaterial(): Promise<unknown> {
+    throw new IntelligenceUnavailableError()
+  }
+
+  async findReplacementUrl(): Promise<string | null> {
+    return null
+  }
+}

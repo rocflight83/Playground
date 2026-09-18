@@ -10,6 +10,7 @@
     "verify": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/verify.ts",
     "redo": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/redo.ts",
     "curate": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/curate.ts",
+    "app": "node --experimental-strip-types --import ./scripts/proxy-preload.mjs scripts/app.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

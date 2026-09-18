@@ -1155,3 +1155,66 @@ describe('renderer ignores curationLog (issue 15, scenario 16)', () => {
     expect(htmlWithLog).toBe(htmlWithoutLog)
   })
 })
+
+// Ticket 18: the one seam the live page uses. When `window.StudyPlanStore`
+// is an object with `load`/`save` functions at call time, the page's
+// progress goes through it instead of `localStorage`; when it is absent the
+// page behaves exactly as before (every test above is the proof).
+describe('progress store seam (ticket 18)', () => {
+  function loadWithStore(html: string, seed: Record<string, unknown>) {
+    const saves: unknown[] = []
+    let current: Record<string, unknown> = JSON.parse(JSON.stringify(seed))
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: 'https://example.com/',
+      beforeParse(window) {
+        ;(window as unknown as { StudyPlanStore: unknown }).StudyPlanStore = {
+          load: () => current,
+          save: (data: Record<string, unknown>) => {
+            current = data
+            saves.push(JSON.parse(JSON.stringify(data)))
+          },
+        }
+      },
+    })
+    return { dom, saves }
+  }
+
+  it('seeds the page from StudyPlanStore.load and never reads localStorage', () => {
+    const { dom } = loadWithStore(renderPlan(fixturePlan), { checkboxes: { 3: true } })
+    const doc = dom.window.document
+    const checked = doc.querySelector(
+      '.session[data-session="3"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    expect(checked.checked).toBe(true)
+    expect(dom.window.localStorage.getItem('studyPlanProgress')).toBeNull()
+  })
+
+  it('ticking a session calls StudyPlanStore.save with the new state and never touches localStorage', () => {
+    const { dom, saves } = loadWithStore(renderPlan(fixturePlan), {})
+    const checkbox = dom.window.document.querySelector(
+      '.session[data-session="1"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new dom.window.Event('change'))
+    expect(saves).toHaveLength(1)
+    expect((saves[0] as { checkboxes: Record<string, boolean> }).checkboxes['1']).toBe(true)
+    expect(dom.window.localStorage.getItem('studyPlanProgress')).toBeNull()
+  })
+
+  it('a StudyPlanStore defined after load is honoured at the next call', () => {
+    const dom = loadWithStorage(renderPlan(fixturePlan))
+    const saves: unknown[] = []
+    ;(dom.window as unknown as { StudyPlanStore: unknown }).StudyPlanStore = {
+      load: () => ({}),
+      save: (data: unknown) => saves.push(data),
+    }
+    const checkbox = dom.window.document.querySelector(
+      '.session[data-session="2"] input[type="checkbox"]'
+    ) as HTMLInputElement
+    checkbox.checked = true
+    checkbox.dispatchEvent(new dom.window.Event('change'))
+    expect(saves).toHaveLength(1)
+    expect(dom.window.localStorage.getItem('studyPlanProgress')).toBeNull()
+  })
+})

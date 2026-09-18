@@ -1,0 +1,124 @@
+/* The live page's curation layer (ticket 18). Every rule is prefixed
+   `live-` so nothing here can collide with the renderer's stylesheet; the
+   colours reuse the page's variables with a fallback for each. */
+
+.live-toggle {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border: 1px solid var(--paper-line-strong, #bdb3a3);
+  border-radius: 999px;
+  background: var(--paper-panel, #fbf9f4);
+  color: var(--ink-soft, #56615a);
+  cursor: pointer;
+  margin-left: 8px;
+}
+.live-toggle[aria-pressed="true"] {
+  background: var(--accent, #b45d4d);
+  border-color: var(--accent-strong, #873f35);
+  color: #fff;
+}
+
+.live-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 24px 10px 78px;
+  border-top: 1px dashed var(--paper-line, #d6cfc1);
+  background: var(--paper-deep, #ebe4d7);
+}
+.live-rail-button, .live-button, .live-chip, .live-swap, .live-link {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border: 1px solid var(--paper-line-strong, #bdb3a3);
+  border-radius: 4px;
+  background: var(--paper-panel, #fbf9f4);
+  color: var(--ink, #26332d);
+  cursor: pointer;
+}
+.live-rail-button[disabled], .live-button[disabled] { opacity: .5; cursor: not-allowed; }
+.live-button-primary {
+  background: var(--accent, #b45d4d);
+  border-color: var(--accent-strong, #873f35);
+  color: #fff;
+}
+.live-swap { margin-left: 8px; padding: 2px 8px; font-size: 12px; }
+.live-link { border: 0; background: transparent; color: var(--accent-strong, #873f35); padding: 2px 0; text-decoration: underline; }
+
+.live-panel {
+  margin: 8px 24px 12px 78px;
+  padding: 12px;
+  border: 1px solid var(--paper-line, #d6cfc1);
+  border-radius: 6px;
+  background: var(--paper-panel, #fbf9f4);
+  display: grid;
+  gap: 8px;
+}
+.material .live-panel { margin: 8px 0 4px; }
+.live-panel-label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft, #56615a); }
+.live-panel-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.live-textarea, .live-input {
+  font: inherit;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--paper-line-strong, #bdb3a3);
+  border-radius: 4px;
+  background: var(--paper, #f4f0e7);
+  color: var(--ink, #26332d);
+}
+.live-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.live-chip { border-radius: 999px; }
+.live-muted { font-size: 12px; color: var(--ink-faint, #737a72); }
+.live-error { margin: 4px 0 0; font-size: 12px; color: var(--accent-strong, #873f35); }
+
+.live-tray {
+  position: fixed;
+  right: 16px;
+  bottom: 64px;
+  width: min(360px, calc(100% - 32px));
+  max-height: 50vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--paper-line-strong, #bdb3a3);
+  border-radius: 8px;
+  background: var(--paper-panel, #fbf9f4);
+  color: var(--ink, #26332d);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+  font-size: 13px;
+  z-index: 20;
+}
+.live-tray[hidden] { display: none; }
+.live-tray-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint, #737a72); margin-bottom: 6px; }
+.live-tray-list { list-style: none; margin: 0; padding: 0; }
+.live-tray-row { padding: 8px 0; border-top: 1px solid var(--paper-line, #d6cfc1); }
+.live-tray-row:first-child { border-top: 0; }
+.live-tray-head { font-weight: 650; }
+.live-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; color: var(--ink-faint, #737a72); font-size: 12px; }
+.live-step-arrow { opacity: .6; }
+.live-step-done { color: var(--ink-soft, #56615a); }
+.live-step-now { color: var(--accent-strong, #873f35); font-weight: 650; }
+.live-step-refused, .live-step-failed { color: var(--accent-strong, #873f35); font-weight: 650; }
+.live-reasons { margin: 6px 0 0; padding-left: 18px; }
+
+.live-fold {
+  margin: 12px 0 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--paper-line-strong, #bdb3a3);
+  background: var(--paper-deep, #ebe4d7);
+  color: var(--ink-soft, #56615a);
+  font-size: 13px;
+}
+.live-fold-summary { cursor: pointer; }
+.live-fold-body { margin: 6px 0 2px; overflow-wrap: anywhere; }
+.live-replaced { font-size: 12px; color: var(--ink-faint, #737a72); margin-top: 2px; }
+.live-replaced s { text-decoration: line-through; }
+
+@media (max-width: 720px) {
+  .live-rail, .live-panel { padding-left: 14px; margin-left: 14px; margin-right: 14px; }
+  .live-rail { padding: 8px 14px; }
+}

@@ -30,9 +30,12 @@ lifecycle `requested → sourcing → verifying → applied | refused | failed`.
 A single in-flight job per plan is enforced (`PlanBusyError`); frame
 refusals cost no intelligence call (the `checkCurationRequest` seam in
 `src/curation.ts`); the `searchReplacement` callback is wired to
-`intelligence.findReplacementUrl`. Ticket 18 puts an HTTP surface over
-this; ticket 19 adds the real provider adapter (see
-`.scratch/study-plan-generator/`). Ticket 12 adds source breadth:
+`intelligence.findReplacementUrl`. Ticket 18 puts the HTTP surface over
+this — `src/app/server.ts` (`createApp`: plan list, **live page**, export
+and the JSON API), the curation layer in `src/app/live/`, and `npm run
+app` — with progress for the live page kept in the store through the
+`window.StudyPlanStore` seam in the page script. Ticket 19 adds the real
+provider adapter (see `.scratch/study-plan-generator/`). Ticket 12 adds source breadth:
 `src/publisher.ts` (a pure `publisherKey(url)` that maps a material URL
 to its publisher — registrable domain with hosting-platform tenant
 awareness, returning `null` for video hosts whose URL does not name the
@@ -89,6 +92,11 @@ carry an explicit `.ts` extension: Node's ESM resolver requires it.
   result back into the same directory. A refused curation leaves the
   directory byte-identical; the printed JSON names every refusal reason and
   the stage it failed at (`request`, `merged-plan`, or `verification`).
+- `npm run app` — the local app on `http://127.0.0.1:4321/` (`PORT` to
+  change): plan list, live page, export and API over the plans in `plans/`.
+  `STUDY_PLAN_INTELLIGENCE=scripted` (the default) has no provider behind
+  it, so generate and curate jobs fail with "no provider configured" while
+  everything else works.
 - `npm test` — run the whole suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (run this regularly; it must stay clean)
@@ -104,6 +112,14 @@ carry an explicit `.ts` extension: Node's ESM resolver requires it.
   so a hand-edited plan re-renders safely.
 - The rendered page is fully self-contained: inline `<style>`/`<script>` only,
   no external stylesheet, script, font, or network reference at view time.
+  This binds `renderPlan` and the export. The **live page** the app serves
+  is that same output with one layer spliced in (`/live.css`, `/live.js`
+  and the progress JSON, all same-origin from the app) — the one relaxation
+  of the rule, and the layer is the only code that talks to the API.
+- The page script's storage goes through `getStorage`/`saveStorage`, which
+  consult `window.StudyPlanStore` (`{ load(), save(data) }`) at call time
+  and fall back to `localStorage`. The live layer defines it; the export
+  never does. Nothing else in the script knows where progress lives.
 
 ## Testing instructions
 
@@ -267,7 +283,10 @@ be followed downstream):
   nothing until `validatePlan` has accepted it. `ScriptedIntelligence`
   is the test double: each method dequeues the next scripted answer
   (or `{ throw }`) and records every call so a test asserts on
-  sequence rather than the network.
+  sequence rather than the network. `UnavailableIntelligence` is what
+  the app runs without a provider: generate / replace calls throw
+  `IntelligenceUnavailableError` (a `failed` job with that message);
+  `findReplacementUrl` answers `null` so verify jobs still run.
 - `src/app/limits.ts` — `withLimits(fetch, { timeoutMs, concurrency })`
   wraps a `FetchLike` with `AbortSignal.timeout` and a counting
   semaphore. The shell's `verifyPlan` has neither today and must not
@@ -289,6 +308,37 @@ be followed downstream):
   full `CurationRequest` once the intelligence has returned. The
   Planner never re-implements `validatePlan`, `verifyPlan`, `renderPlan`,
   or `applyCuration` — it orchestrates the shell.
+- `src/app/server.ts` — `createApp({ planner, store, live }): (req, res) => void`,
+  a plain `http` request handler (tests drive it on an ephemeral port).
+  Pages: `GET /` (plan list with a "New plan" form), `GET /plans/:id` (the
+  live page: `renderPlan(plan)` with the layer spliced in immediately
+  before the page's own `<script>`, so `StudyPlanStore` exists when that
+  script seeds the page), `GET /plans/:id/export` (`renderPlan(plan)` byte
+  for byte, as an attachment), `GET /live.js`, `GET /live.css`. API under
+  `/api/`: plans (list, read, `POST` brief → generate job, `POST import`),
+  curations and verify (`202 { jobId }`, `409` when the plan is busy),
+  jobs (`GET /api/jobs/:id`, `GET /api/plans/:id/jobs` newest first) and
+  progress (`GET`/`PUT`, object bodies only). Every `/api/*` answer is
+  JSON, errors included; bodies over 2 MB are `413`. `renderLivePage` is
+  exported for the page tests.
+- `src/app/live/live.js` + `live.css` — the curation layer, plain browser
+  JS and CSS served as-is (no build). Defines `window.StudyPlanStore`
+  seeded from `#live-progress` and saves with a 500 ms debounce (flushed
+  with `keepalive` on `pagehide`, so Import Progress and the reload on
+  `applied` lose nothing). Curate mode (masthead toggle) adds a rail per
+  session and a swap control per material; requests post to the API and
+  are followed in the request tray by polling `GET /api/jobs/:id`;
+  `applied` reloads the page. "Previously:" folds come from
+  `curationLog`; a swapped material is marked on its row only when the
+  record carries `suppliedUrl` (the record has no other pointer to the
+  replacement), otherwise the fold sits at the top of the session detail.
+  Data reaches the DOM only through `textContent`/`setAttribute`; classes
+  are prefixed `live-`.
+- `scripts/app.ts` — the command behind `npm run app`. Wires
+  `FilePlanStore('plans')`, the intelligence named by
+  `STUDY_PLAN_INTELLIGENCE` (`scripted` → `UnavailableIntelligence`), the
+  real `fetch`, and the live layer's files read at startup; binds
+  `127.0.0.1` only.
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,

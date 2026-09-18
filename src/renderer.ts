@@ -472,12 +472,21 @@ const SCRIPT = `
   var root = document.documentElement;
 
   // -- Storage (issue 02) ---------------------------------------------------
+  // Ticket 18: when the page is served live, the app defines
+  // window.StudyPlanStore = { load(), save(data) } before this script runs
+  // and progress goes through it. Checked at call time, so a page without
+  // it behaves exactly as the self-contained export always has.
+
+  function progressStore() {
+    var store = window.StudyPlanStore;
+    if (store && typeof store === 'object' && typeof store.load === 'function' && typeof store.save === 'function') return store;
+    return null;
+  }
 
   function getStorage() {
     try {
-      var raw = window.localStorage.getItem(storageKey);
-      if (!raw) return {};
-      var parsed = JSON.parse(raw);
+      var store = progressStore();
+      var parsed = store ? store.load() : JSON.parse(window.localStorage.getItem(storageKey) || 'null');
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch (e) {
       return {};
@@ -485,7 +494,10 @@ const SCRIPT = `
   }
 
   function saveStorage(data) {
-    try { window.localStorage.setItem(storageKey, JSON.stringify(data)); } catch (e) {}
+    try {
+      var store = progressStore();
+      if (store) store.save(data); else window.localStorage.setItem(storageKey, JSON.stringify(data));
+    } catch (e) {}
   }
 
   function withState(mutate) {

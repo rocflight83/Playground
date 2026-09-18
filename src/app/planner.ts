@@ -18,7 +18,7 @@ import { ALREADY_KNOWN_MARKER, MIN_REPEATED_UNIT_SESSIONS } from '../plan-types.
 import type { CurationRecord } from '../plan-types.ts'
 import type { Material, PlanData, Session } from '../plan-types.ts'
 import {
-  CurationRequest,
+  type CurationRequest,
   checkCurationRequest,
   curatePlan,
   type CuratePlanOptions,
@@ -33,7 +33,7 @@ import {
   type PlanBrief,
   type ReplaceSessionContext,
 } from './intelligence.ts'
-import { LimitedFetch, withLimits } from './limits.ts'
+import { type LimitedFetch, withLimits } from './limits.ts'
 
 export type JobKind = 'generate' | 'curate' | 'verify'
 
@@ -100,8 +100,8 @@ export interface PlannerDeps {
   ids?: () => string
   fetchTimeoutMs?: number
   fetchConcurrency?: number
-  /** Reserved for a future per-plan progress flush; the page's localStorage
-   * is the only writer of progress today. */
+  /** Reserved for a future per-plan progress flush; the app's server writes
+   * progress through the store today, never the Planner. */
   progress?: Progress
 }
 

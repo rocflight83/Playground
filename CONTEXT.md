@@ -108,6 +108,16 @@ Where plans, their exports and the learner's progress are kept: the plan
 directory today, a database later.
 _Avoid_: database, files
 
+**Live page**:
+The plan page the app serves: the rendered page plus a curation layer that
+talks to the app.
+_Avoid_: UI, front end, SPA
+
+**Export**:
+The self-contained copy of the plan page that loads nothing from the network
+and keeps its progress in the browser.
+_Avoid_: static site, download
+
 **Job**:
 One in-flight generate, curate or verify request and its stage. Lives in
 memory, never in the plan.
