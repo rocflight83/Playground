@@ -201,6 +201,7 @@ export class FilePlanStore implements PlanStore {
   }
 
   async read(id: string): Promise<PlanData> {
+    assertSafePlanId(id)
     const planPath = join(this.baseDir, id, 'plan.json')
     if (!(await this.fs.exists(planPath))) throw new PlanNotFoundError(id)
     const raw = await this.fs.readFile(planPath)
@@ -219,6 +220,7 @@ export class FilePlanStore implements PlanStore {
   }
 
   async write(id: string, plan: PlanData): Promise<void> {
+    assertSafePlanId(id)
     const errors = validatePlan(plan)
     if (errors.length > 0) throw new ValidationFailedError(errors)
     const planPath = join(this.baseDir, id, 'plan.json')
@@ -237,6 +239,9 @@ export class FilePlanStore implements PlanStore {
   }
 
   async readProgress(id: string): Promise<Progress> {
+    assertSafePlanId(id)
+    const planPath = join(this.baseDir, id, 'plan.json')
+    if (!(await this.fs.exists(planPath))) throw new PlanNotFoundError(id)
     const path = join(this.baseDir, id, 'progress.json')
     if (!(await this.fs.exists(path))) return defaultProgress()
     const raw = await this.fs.readFile(path)
@@ -245,6 +250,9 @@ export class FilePlanStore implements PlanStore {
   }
 
   async writeProgress(id: string, progress: Progress): Promise<void> {
+    assertSafePlanId(id)
+    const planPath = join(this.baseDir, id, 'plan.json')
+    if (!(await this.fs.exists(planPath))) throw new PlanNotFoundError(id)
     const path = join(this.baseDir, id, 'progress.json')
     await this.fs.writeFile(path, JSON.stringify(progress, null, 2))
   }
@@ -270,5 +278,11 @@ export class FilePlanStore implements PlanStore {
     const hooks = this.fs as FileSystemAdapter & Partial<TestFileSystemHooks>
     if (hooks.lastReadFile) return hooks.lastReadFile(path)
     return ''
+  }
+}
+
+function assertSafePlanId(id: string): void {
+  if (!id || id === '.' || id === '..' || /[\\/]/.test(id)) {
+    throw new PlanNotFoundError(id)
   }
 }

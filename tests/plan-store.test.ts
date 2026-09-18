@@ -224,4 +224,16 @@ describe('FilePlanStore', () => {
     await store.writeProgress('python-programming', { checkboxes: { '1': true } })
     expect(await store.readProgress('python-programming')).toEqual({ checkboxes: { '1': true } })
   })
+
+  it('rejects progress access for unknown and unsafe plan ids', async () => {
+    const fs = new InMemoryFileSystem()
+    const store = new FilePlanStore('/plans', { fs })
+
+    await expect(store.readProgress('missing')).rejects.toBeInstanceOf(PlanNotFoundError)
+    await expect(store.writeProgress('missing', {})).rejects.toBeInstanceOf(PlanNotFoundError)
+
+    fs.files.set('/plans/plan.json', JSON.stringify(fixturePlan))
+    await expect(store.read('.')).rejects.toBeInstanceOf(PlanNotFoundError)
+    await expect(store.writeProgress('.', {})).rejects.toBeInstanceOf(PlanNotFoundError)
+  })
 })
