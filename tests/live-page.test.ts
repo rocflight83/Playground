@@ -89,6 +89,13 @@ function buttonByText(root: ParentNode, text: string): HTMLButtonElement {
   return match as HTMLButtonElement
 }
 
+/** Icon buttons (the rail and swap controls) carry their name in `aria-label`, not text. */
+function buttonByLabel(root: ParentNode, label: string): HTMLButtonElement {
+  const match = root.querySelector(`button[aria-label="${label}"]`)
+  if (!match) throw new Error(`no button labelled "${label}"`)
+  return match as HTMLButtonElement
+}
+
 function curate(dom: JSDOM): void {
   buttonByText(dom.window.document, 'Curate').click()
 }
@@ -118,26 +125,59 @@ describe('live page: progress through the store (scenario 8)', () => {
 })
 
 describe('live page: curate mode (scenarios 9, 10)', () => {
-  it('shows no rail until Curate is on, then one rail per session with drop disabled on sessions 6 and 11', () => {
+  it("shows no rail until Curate is on, then prototype C's rail per session: two icon buttons first in the box, drop disabled on 6 and 11 (#31)", () => {
     const { dom, doc } = loadLive(fixturePlan)
     expect(doc.querySelectorAll('.live-rail')).toHaveLength(0)
     curate(dom)
     expect(doc.querySelectorAll('.live-rail')).toHaveLength(14)
-    for (const n of [6, 11]) {
-      const drop = buttonByText(section(doc, n), '✓ I already know this')
-      expect(drop.disabled).toBe(true)
-      expect(drop.title).not.toBe('')
+    for (let n = 1; n <= 14; n++) {
+      const box = section(doc, n)
+      const rail = box.firstElementChild as HTMLElement
+      expect(rail.classList.contains('live-rail')).toBe(true)
+      const buttons = Array.from(rail.querySelectorAll<HTMLButtonElement>('button.live-rail-button'))
+      expect(buttons.map((b) => b.textContent!.trim())).toEqual(['✓', '↻'])
+      expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['I already know this', 'Re-plan this session'])
+      expect(buttons.map((b) => b.title)).toEqual([
+        n === 6 || n === 11 ? expect.stringMatching(/consolidation/i) : 'I already know this',
+        'Re-plan this session',
+      ])
     }
-    expect(buttonByText(section(doc, 1), '✓ I already know this').disabled).toBe(false)
+    for (const n of [6, 11]) expect(buttonByLabel(section(doc, n), 'I already know this').disabled).toBe(true)
+    expect(buttonByLabel(section(doc, 1), 'I already know this').disabled).toBe(false)
     buttonByText(doc, 'Done curating').click()
     expect(doc.querySelectorAll('.live-rail')).toHaveLength(0)
+  })
+
+  it('the drop and re-plan panels open under the summary row, not above it, even though the rail is first in the box (#31)', () => {
+    const { dom, doc } = loadLive(fixturePlan)
+    curate(dom)
+    const two = section(doc, 2)
+    const summary = two.querySelector('.session-summary')!
+    buttonByLabel(two, 'I already know this').click()
+    expect(two.querySelector('.live-panel')!.previousElementSibling).toBe(summary)
+    buttonByLabel(two, 'Re-plan this session').click()
+    expect(two.querySelectorAll('.live-panel')).toHaveLength(1)
+    expect(two.querySelector('.live-panel')!.previousElementSibling).toBe(summary)
+  })
+
+  it('every material gets a ⇄ swap icon labelled for assistive tech (#31)', () => {
+    const { dom, doc } = loadLive(fixturePlan)
+    curate(dom)
+    const four = section(doc, 4)
+    const swaps = Array.from(four.querySelectorAll<HTMLButtonElement>('button.live-swap'))
+    expect(swaps).toHaveLength(four.querySelectorAll('.material').length)
+    for (const swap of swaps) {
+      expect(swap.textContent!.trim()).toBe('⇄')
+      expect(swap.getAttribute('aria-label')).toBe('Swap this material')
+      expect(swap.title).toBe('Swap this material')
+    }
   })
 
   it('the drop textarea gates the button at ten characters and submits drop-as-known with the text', async () => {
     const { dom, doc, api } = loadLive(fixturePlan)
     curate(dom)
     const two = section(doc, 2)
-    buttonByText(two, '✓ I already know this').click()
+    buttonByLabel(two, 'I already know this').click()
     const textarea = two.querySelector('textarea[name="known"]') as HTMLTextAreaElement
     const drop = buttonByText(two, 'Drop and replace')
     expect(drop.disabled).toBe(true)
@@ -160,10 +200,10 @@ describe('live page: curate mode (scenarios 9, 10)', () => {
     curate(dom)
     const four = section(doc, 4)
     const firstUrl = fixturePlan.sessions[3].materials[0].url
-    buttonByText(four, '⇄ Swap').click()
+    buttonByLabel(four, 'Swap this material').click()
     buttonByText(four, 'too advanced').click()
     await settle()
-    buttonByText(four, '⇄ Swap').click()
+    buttonByLabel(four, 'Swap this material').click()
     const url = four.querySelector('input[name="url"]') as HTMLInputElement
     url.value = 'https://example.com/mine'
     buttonByText(four, 'Use it').click()
@@ -179,7 +219,7 @@ describe('live page: curate mode (scenarios 9, 10)', () => {
     const { dom, doc, api } = loadLive(fixturePlan)
     curate(dom)
     const seven = section(doc, 7)
-    buttonByText(seven, '↻ Re-plan').click()
+    buttonByLabel(seven, 'Re-plan this session').click()
     const reason = seven.querySelector('input[name="reason"]') as HTMLInputElement
     reason.value = 'wrong emphasis'
     buttonByText(seven, 'Re-plan this session').click()
@@ -256,7 +296,7 @@ describe('live page: the request tray (scenario 12)', () => {
     const before = section(doc, 3).querySelector('.session-detail')!.innerHTML
     curate(dom)
     const three = section(doc, 3)
-    buttonByText(three, '↻ Re-plan').click()
+    buttonByLabel(three, 'Re-plan this session').click()
     buttonByText(three, 'Re-plan this session').click()
     await settle()
     const tray = doc.querySelector('[aria-label="Curation requests"]') as HTMLElement

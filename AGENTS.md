@@ -396,7 +396,11 @@ be followed downstream):
   seeded from `#live-progress` and saves with a 500 ms debounce (flushed
   with `keepalive` on `pagehide`, so Import Progress and the reload on
   `applied` lose nothing). Curate mode (masthead toggle) adds a rail per
-  session and a swap control per material; requests post to the API and
+  session and a swap control per material — #19's variant C as
+  prototyped (#31): two 30 px icon buttons, ✓ and ↻, hanging off the
+  top-left of the session box in its 44 px gutter (a row inside the box
+  under 640 px, where the renderer drops the gutter), and a ⇄ icon per material, all named by
+  `aria-label`/`title`; requests post to the API and
   are followed in the request tray by polling `GET /api/jobs/:id`;
   `applied` reloads the page. "Previously:" folds come from
   `curationLog`; a swapped material is marked on its row only when the

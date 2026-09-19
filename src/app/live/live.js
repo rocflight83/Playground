@@ -11,6 +11,9 @@
  *      known, re-plan) and a swap control per material, each opening a
  *      small inline panel that posts a curation request. The session being
  *      curated is untouched until the job is applied and the page reloads.
+ *      The rail's shape is #19's variant C as prototyped (#31): two icon
+ *      buttons, ✓ and ↻, hanging off the top-left of the session box, and
+ *      a ⇄ icon on each material; their names live in `aria-label`/`title`.
  *   3. The request tray and the "Previously:" folds, both read from the API.
  *
  * Plain browser JS, no build step. Data reaches the DOM only through
@@ -82,6 +85,14 @@
     var node = el('button', className, text);
     node.type = 'button';
     if (onClick) node.addEventListener('click', onClick);
+    return node;
+  }
+
+  /** A glyph-only button whose name is its label and tooltip. */
+  function iconButton(className, glyph, label, onClick) {
+    var node = button(className, glyph, onClick);
+    node.setAttribute('aria-label', label);
+    node.title = label;
     return node;
   }
 
@@ -270,19 +281,18 @@
   function mountRails() {
     sessionSections().forEach(function (section) {
       var rail = el('div', 'live-rail');
-      var drop = button('live-rail-button', '✓ I already know this');
+      var drop = iconButton('live-rail-button', '✓', 'I already know this');
       if (section.getAttribute('data-consolidation') === 'true') {
         drop.disabled = true;
         drop.title = 'A consolidation session reviews the other sessions; there is nothing here to already know.';
       } else {
-        drop.addEventListener('click', function () { openDropPanel(section, rail); });
+        drop.addEventListener('click', function () { openDropPanel(section); });
       }
-      var redo = button('live-rail-button', '↻ Re-plan', function () { openRedoPanel(section, rail); });
+      var redo = iconButton('live-rail-button', '↻', 'Re-plan this session', function () { openRedoPanel(section); });
       rail.appendChild(drop);
       rail.appendChild(redo);
-      var summary = section.querySelector('.session-summary');
-      if (summary && summary.nextSibling) section.insertBefore(rail, summary.nextSibling);
-      else section.appendChild(rail);
+      // First in the box, so DOM and keyboard order match the top-left placement.
+      section.insertBefore(rail, section.firstChild);
 
       var rows = section.querySelectorAll('.material');
       for (var i = 0; i < rows.length; i++) attachSwap(section, rows[i]);
@@ -293,7 +303,7 @@
     var link = row.querySelector('.material-link');
     if (!link) return;
     var url = link.getAttribute('href');
-    row.appendChild(button('live-swap', '⇄ Swap', function () { openSwapPanel(section, row, url); }));
+    row.appendChild(iconButton('live-swap', '⇄', 'Swap this material', function () { openSwapPanel(section, row, url); }));
   }
 
   function unmountRails() {
@@ -327,9 +337,14 @@
     return row;
   }
 
-  function openDropPanel(section, rail) {
+  /** Session panels sit under the summary row; the rail is first in the box and not an anchor. */
+  function panelAnchor(section) {
+    return section.querySelector('.session-summary') || section.lastChild;
+  }
+
+  function openDropPanel(section) {
     var n = sessionNumberOf(section);
-    var panel = openPanel(rail, 'Drop session ' + n + ' as known');
+    var panel = openPanel(panelAnchor(section), 'Drop session ' + n + ' as known');
     var label = el('label', 'live-panel-label', 'What do you already know from this session?');
     var textarea = el('textarea', 'live-textarea');
     textarea.name = 'known';
@@ -351,9 +366,9 @@
     textarea.focus();
   }
 
-  function openRedoPanel(section, rail) {
+  function openRedoPanel(section) {
     var n = sessionNumberOf(section);
-    var panel = openPanel(rail, 'Re-plan session ' + n);
+    var panel = openPanel(panelAnchor(section), 'Re-plan session ' + n);
     var input = el('input', 'live-input');
     input.type = 'text';
     input.name = 'reason';
