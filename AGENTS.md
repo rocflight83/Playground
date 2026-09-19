@@ -111,17 +111,20 @@ carry an explicit `.ts` extension: Node's ESM resolver requires it.
   dry run: one generate, one drop-as-known (session 3) and one
   swap-material (session 4, "want a practitioner take") through the
   Planner against the live xAI API, printing wall time, tokens, tool
-  calls by kind, list-price cost, outcome and unresolved count per step,
-  then the decision-8 tripwires from #30. Writes the plan to `plans/`
-  like any generate. Run once, by hand, with the human's key.
+  calls by kind, list-price cost and what xAI billed, outcome and
+  unresolved count per step, then the decision-8 tripwires from #30
+  (cost uses the billed figure when the responses carry it). Writes the
+  plan to `plans/` like any generate. Run once, by hand, with the
+  human's key.
 - **Environment.** `app` and `dry-run` pass `--env-file-if-exists=.env`
   (Node ≥ 22.9; no `dotenv`), so `.env` at the repo root may hold
   `XAI_API_KEY=…`. `.env` is git-ignored, but the repo folder is
   OneDrive-synced, so treat a key that lands there as one you can rotate.
   The key is never pasted into an issue, a commit or a chat. Every xAI
   call appends one JSON line (`{ at, call, model, inputTokens,
-  outputTokens, cacheReadTokens, toolCalls, ms }`) to `plans/.usage.log`
-  (git-ignored with `plans/`).
+  outputTokens, cacheReadTokens, toolCalls, billedUsd?, ms }`) to
+  `plans/.usage.log` (git-ignored with `plans/`); `billedUsd` is what xAI
+  billed (`usage.cost_in_usd_ticks / 1e10`) when the response says.
 - `npm test` — run the whole suite once (`vitest run`)
 - `npm run test:watch` — watch mode
 - `npm run typecheck` — `tsc --noEmit` (run this regularly; it must stay clean)
@@ -315,21 +318,36 @@ be followed downstream):
 - `src/app/intelligence-xai.ts` — `createXaiIntelligence(opts): Intelligence`,
   the xAI adapter. `instructions` = `prompts/policy.md` + the call's duty
   file; the call's context (brief, plan, session, computed units,
-  `budget`) is one user message whose text is JSON — no prompt prose
-  lives in TypeScript. `text.format` is the call's schema from
+  `budget`, `responseSchema`) is one user message whose text is JSON —
+  no prompt prose lives in TypeScript. The call's schema from
   `plan-schema.ts` (`plan`, `session_replacement`, `material`,
-  `replacement_url`), a shape hint for the model, never a gate: answers
-  come back as `unknown` and `validatePlan` stays the only truth.
-  `store: false` on every request; repair rounds resend the previous
-  attempt and its errors as a further user message. One combined
-  tool-call cap per call kind (`maxToolCalls`, default 30 / 8 / 3) is
-  sent as xAI's `max_turns` and repeated in the user JSON's `budget`;
-  `x_search` is offered per `xSearch` (`generate` — generate and
-  replaceMaterial only, the default; `sourcing`; `off`). An `incomplete`
-  response or non-JSON `output_text` throws `IntelligenceError` naming
-  the reason; client errors propagate. `onUsage` gets one record per
-  call. The client is injected as the narrow `XaiClient`; `xaiClientOf`
-  is the single cast from `OpenAI`. The adapter never verifies links.
+  `replacement_url`) is a shape hint for the model, never a gate: answers
+  come back as `unknown` and `validatePlan` stays the only truth. Where
+  the schema goes is `schemaChannel`: `context` (default) puts it in the
+  user JSON as `responseSchema` and sends no `text.format`; `format` is
+  decision 4's original `text.format` json_schema (with `strictSchema`).
+  The default was switched on the #30 dry run: under `text.format`,
+  strict or not, `grok-4.6` answered every call with a placeholder
+  skeleton while drafting the real document in its reasoning; the same
+  request without it produced full, searched, valid answers.
+  `store: false` and `stream: true` on every request — a generate runs
+  for minutes and the proxy this machine reaches the web through drops
+  any connection idle for 60 s, so the event stream keeps it alive; the
+  adapter reads only the terminal event's response. Repair rounds resend
+  the previous attempt and its errors as a further user message. One
+  combined tool-call cap per call kind (`maxToolCalls`, default
+  30 / 8 / 3) is sent as xAI's `max_turns` and repeated in the user
+  JSON's `budget`; `x_search` is offered per `xSearch` (`generate` —
+  generate and replaceMaterial only, the default; `sourcing`; `off`).
+  The answer is the last complete JSON document in the output text
+  (prose, fences and a leading placeholder skeleton are skipped). An
+  `incomplete` or `failed` response, a stream `error`, a stream with no
+  terminal event, or text with no JSON document throws
+  `IntelligenceError` naming the reason; client errors propagate.
+  `onUsage` gets one record per call, with `billedUsd` when xAI reports
+  it. The client is injected as the narrow `XaiClient` (`create` returns
+  the event stream); `xaiClientOf` is the single cast from `OpenAI`. The
+  adapter never verifies links.
 - `src/app/plan-schema.ts` — `PLAN_SCHEMAS`, the hand-written JSON
   schemas mirroring `plan-types.ts`. When `plan-types.ts` changes this
   file changes with it: `tests/plan-schema.test.ts` walks a fixture plan
@@ -398,8 +416,9 @@ be followed downstream):
   `plans/.usage.log`.
 - `scripts/dry-run.ts` — the command behind `npm run dry-run`. Runs the
   Planner directly (no server) through the three steps above, prices
-  each from a dated `RATES` constant (#13's list prices), and evaluates
-  the decision-8 tripwires (a–c; d is the human's).
+  each from a dated `RATES` constant (#13's list prices) beside the
+  billed total from the usage records, and evaluates the decision-8
+  tripwires (a–c; d is the human's) on the billed figure when known.
 - `scripts/generate.ts` — the command behind `npm run generate`. Wires the real
   `fetch` into `generatePlan` and prints a JSON summary. Link replacement is
   deliberately not implemented here: re-sourcing a dead link is judgement work,

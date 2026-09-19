@@ -7,9 +7,16 @@
  *   - Prompt boundary is the four files in `prompts/`: `policy.md` plus the
  *     call's duty file are the `instructions`; the call-specific context is
  *     one user message whose text is JSON. No prompt prose lives here.
- *   - The JSON schema in `text.format` is a shape hint for the model, not a
- *     gate. Answers are returned as `unknown`; `validatePlan` in the Planner
- *     is the only truth.
+ *   - The JSON schema is a shape hint for the model, not a gate. Answers are
+ *     returned as `unknown`; `validatePlan` in the Planner is the only truth.
+ *     By default (`schemaChannel: 'context'`) the schema travels in the user
+ *     JSON as `responseSchema` and no `text.format` is sent: on the dry run
+ *     (2026-09-19) `grok-4.6` under `text.format`, strict or not, answered
+ *     every call with a placeholder skeleton while drafting the real
+ *     document in its reasoning; the same request without `text.format`
+ *     produced a full, searched, valid answer. `schemaChannel: 'format'` is
+ *     decision 4's original mechanism, kept for when the provider's
+ *     structured-output path works with these prompts.
  *   - `store: false` on every request; repair rounds resend the previous
  *     attempt and its errors as a further user message.
  *   - The tool budget is one combined cap per call. xAI's request field is
@@ -18,6 +25,17 @@
  *     `budget` and `onUsage` reports the actual count.
  *   - The adapter never verifies links. It may search and open pages to
  *     choose materials; `verifyPlan` in the Planner is the only verification.
+ *   - Every request streams (`stream: true`). A generate can take minutes
+ *     and the proxy this machine reaches the web through closes any
+ *     connection idle for 60 s; the event stream keeps it busy. The
+ *     adapter reads nothing from the deltas — the answer is the
+ *     `response` on the terminal `response.completed` / `.incomplete` /
+ *     `.failed` event, exactly what a non-streamed call would return.
+ *   - The answer is the *last* JSON document in the output text; prose and
+ *     code fences around it are skipped. Without `text.format` the model
+ *     tends to lead with a sentence; under `text.format` it was seen to
+ *     emit a placeholder skeleton and then the real document straight
+ *     after it. Text with no complete JSON value is unparseable output.
  *
  * The client is injected and typed to the sliver this module uses, so a
  * test passes a plain object and the real `OpenAI` instance satisfies it
@@ -44,8 +62,10 @@ export interface XaiRequest {
   instructions: string
   input: { role: 'user'; content: string }[]
   tools: { type: 'web_search' | 'x_search' }[]
-  text: { format: { type: 'json_schema'; name: string; schema: Record<string, unknown>; strict: boolean } }
+  /** Present only under `schemaChannel: 'format'`. */
+  text?: { format: { type: 'json_schema'; name: string; schema: Record<string, unknown>; strict: boolean } }
   store: false
+  stream: true
   max_turns: number
 }
 
@@ -53,7 +73,9 @@ export interface XaiRequest {
 export interface XaiResponse {
   status?: string
   incomplete_details?: { reason?: string } | null
-  output_text?: string
+  error?: { message?: string } | null
+  /** Output items; the answer is the `output_text` content of the `message` item(s). */
+  output?: XaiOutputItem[]
   usage?: {
     input_tokens?: number
     output_tokens?: number
@@ -62,12 +84,51 @@ export interface XaiResponse {
     server_side_tool_usage_details?: Record<string, number>
     /** Older shape: `{ SERVER_SIDE_TOOL_WEB_SEARCH: n, … }`. */
     server_side_tool_usage?: Record<string, number>
+    /** What xAI billed for the request, in USD × 10¹⁰. */
+    cost_in_usd_ticks?: number
   }
 }
 
-/** What `OpenAI` provides and a test fakes: `client.responses.create`. */
+export interface XaiOutputItem {
+  type: string
+  content?: { type: string; text?: string }[]
+  [key: string]: unknown
+}
+
+/** The three events that end a stream with a response. */
+export interface XaiTerminalEvent {
+  type: 'response.completed' | 'response.incomplete' | 'response.failed'
+  response: XaiResponse
+}
+
+/** An `error` event ends the stream without a response. */
+export interface XaiErrorEvent {
+  type: 'error'
+  message?: string
+  code?: string
+}
+
+/**
+ * The streamed events the adapter distinguishes. Deltas and tool-progress
+ * events pass through as `{ type }`; only the terminal and error events are
+ * read.
+ */
+export type XaiStreamEvent = XaiTerminalEvent | XaiErrorEvent | { type: string; [key: string]: unknown }
+
+function isTerminalEvent(event: XaiStreamEvent): event is XaiTerminalEvent {
+  return (
+    (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') &&
+    'response' in event
+  )
+}
+
+function isErrorEvent(event: XaiStreamEvent): event is XaiErrorEvent {
+  return event.type === 'error'
+}
+
+/** What `OpenAI` provides and a test fakes: `client.responses.create` with `stream: true`. */
 export interface XaiClient {
-  responses: { create(params: XaiRequest): Promise<XaiResponse> }
+  responses: { create(params: XaiRequest): Promise<AsyncIterable<XaiStreamEvent>> }
 }
 
 /**
@@ -88,6 +149,12 @@ export interface XaiUsage {
   cacheReadTokens: number
   /** Server-side tool calls by kind, e.g. `{ web_search: 12, x_search: 3 }`. */
   toolCalls: Record<string, number>
+  /**
+   * What xAI billed for the call, when the response says. `cost_in_usd_ticks`
+   * is USD x 10^10: checked on the dry run against the list-price sum for a
+   * tool-free call (9727 in x $2 + 2046 out x $6 per MTok = 317 300 000 ticks).
+   */
+  billedUsd?: number
   ms: number
 }
 
@@ -100,7 +167,9 @@ export interface XaiIntelligenceOptions {
   maxToolCalls?: { generate?: number; replace?: number; findUrl?: number }
   /** Where `x_search` is offered: generate + replaceMaterial (default), every sourcing call, or never. */
   xSearch?: 'generate' | 'sourcing' | 'off'
-  /** Ask the model to adhere to the schema strictly. Default false. */
+  /** Where the call's JSON schema goes: in the user JSON (default) or as `text.format`. See the module doc. */
+  schemaChannel?: 'context' | 'format'
+  /** Under `schemaChannel: 'format'`, ask the model to adhere to the schema strictly. Default false. */
   strictSchema?: boolean
   onUsage?: (usage: XaiUsage) => void
   /** Injected clock for the `ms` figure; defaults to `Date.now`. */
@@ -113,6 +182,9 @@ const DEFAULT_MAX_TOOL_CALLS = { generate: 30, replace: 8, findUrl: 3 } as const
 /** Travels in the user JSON so the model sees the cap the request also carries as `max_turns`. */
 type Budget = { maxToolCalls: number }
 
+/** The user-message fields the adapter adds to every call's context. */
+type CallEnvelope = { budget: Budget; responseSchema?: Record<string, unknown> }
+
 export function createXaiIntelligence(opts: XaiIntelligenceOptions): Intelligence {
   const models = {
     generate: opts.models?.generate ?? XAI_DEFAULT_MODEL,
@@ -120,6 +192,7 @@ export function createXaiIntelligence(opts: XaiIntelligenceOptions): Intelligenc
   }
   const caps = { ...DEFAULT_MAX_TOOL_CALLS, ...opts.maxToolCalls }
   const xSearch = opts.xSearch ?? 'generate'
+  const schemaChannel = opts.schemaChannel ?? 'context'
   const strict = opts.strictSchema ?? false
   const now = opts.now ?? (() => Date.now())
 
@@ -161,20 +234,25 @@ export function createXaiIntelligence(opts: XaiIntelligenceOptions): Intelligenc
    */
   async function call(kind: XaiUsage['call'], context: object, followUps: unknown[] = []): Promise<unknown> {
     const spec = calls[kind]
-    const budget: Budget = { maxToolCalls: spec.cap }
+    const schema = PLAN_SCHEMAS[spec.format]
+    const envelope: CallEnvelope = { budget: { maxToolCalls: spec.cap } }
+    let text: XaiRequest['text']
+    if (schemaChannel === 'context') envelope.responseSchema = schema
+    else text = { format: { type: 'json_schema', name: spec.format, schema, strict } }
     const tools: XaiRequest['tools'] = [{ type: 'web_search' }]
     if (spec.xSearch) tools.push({ type: 'x_search' })
     const request: XaiRequest = {
       model: spec.model,
       instructions: `${opts.prompts.policy}\n\n${spec.duty}`,
-      input: [{ ...context, budget }, ...followUps].map((m) => ({ role: 'user', content: JSON.stringify(m) })),
+      input: [{ ...context, ...envelope }, ...followUps].map((m) => ({ role: 'user', content: JSON.stringify(m) })),
       tools,
-      text: { format: { type: 'json_schema', name: spec.format, schema: PLAN_SCHEMAS[spec.format], strict } },
+      ...(text ? { text } : {}),
       store: false,
+      stream: true,
       max_turns: spec.cap,
     }
     const started = now()
-    const response = await opts.client.responses.create(request)
+    const response = await finalResponse(await opts.client.responses.create(request))
     const ms = now() - started
     opts.onUsage?.(usageOf(kind, spec.model, response, ms))
     return parseAnswer(response)
@@ -214,18 +292,92 @@ interface CallSpec {
   xSearch: boolean
 }
 
+/** Drain the event stream and return the terminal event's response. */
+async function finalResponse(events: AsyncIterable<XaiStreamEvent>): Promise<XaiResponse> {
+  for await (const event of events) {
+    if (isTerminalEvent(event)) return event.response
+    if (isErrorEvent(event)) throw new IntelligenceError(`xAI stream error: ${event.message ?? event.code ?? 'unknown'}`)
+  }
+  throw new IntelligenceError('xAI stream ended without a terminal event')
+}
+
+/** The text of every `output_text` content part on every `message` item, concatenated. */
+function outputTextOf(response: XaiResponse): string {
+  return (response.output ?? [])
+    .filter((item) => item.type === 'message')
+    .flatMap((item) => item.content ?? [])
+    .filter((part) => part.type === 'output_text')
+    .map((part) => part.text ?? '')
+    .join('')
+}
+
 function parseAnswer(response: XaiResponse): unknown {
   if (response.status === 'incomplete') {
     const reason = response.incomplete_details?.reason ?? 'unknown'
     throw new IntelligenceError(`xAI response incomplete: ${reason}`)
   }
-  const text = response.output_text ?? ''
-  if (text.trim().length === 0) throw new IntelligenceError('xAI response had unparseable output: empty output_text')
-  try {
-    return JSON.parse(text)
-  } catch {
-    throw new IntelligenceError('xAI response had unparseable output: output_text is not JSON')
+  if (response.status === 'failed') {
+    throw new IntelligenceError(`xAI response failed: ${response.error?.message ?? 'unknown'}`)
   }
+  const text = outputTextOf(response)
+  if (text.trim().length === 0) throw new IntelligenceError('xAI response had unparseable output: empty output_text')
+  const documents = jsonDocumentsIn(text)
+  if (documents.length === 0) throw new IntelligenceError('xAI response had unparseable output: no JSON document in output_text')
+  return documents[documents.length - 1]
+}
+
+/**
+ * Every complete JSON object or array in `text`, in order, ignoring what
+ * lies between them (prose, code fences, a stray brace in a sentence). A
+ * candidate runs from a `{` or `[` to the bracket that closes it, counting
+ * depth outside string literals; a candidate that does not parse, or never
+ * closes, is skipped from its next character.
+ */
+function jsonDocumentsIn(text: string): unknown[] {
+  const values: unknown[] = []
+  let cursor = 0
+  for (;;) {
+    const start = nextOpener(text, cursor)
+    if (start === -1) return values
+    const end = closerOf(text, start)
+    if (end === -1) {
+      cursor = start + 1
+      continue
+    }
+    try {
+      values.push(JSON.parse(text.slice(start, end + 1)))
+      cursor = end + 1
+    } catch {
+      cursor = start + 1
+    }
+  }
+}
+
+function nextOpener(text: string, from: number): number {
+  const brace = text.indexOf('{', from)
+  const bracket = text.indexOf('[', from)
+  if (brace === -1) return bracket
+  if (bracket === -1) return brace
+  return Math.min(brace, bracket)
+}
+
+/** Index of the bracket closing the one at `start`, or -1 when the text ends first. */
+function closerOf(text: string, start: number): number {
+  let depth = 0
+  let inString = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (ch === '\\') i++
+      else if (ch === '"') inString = false
+    } else if (ch === '"') inString = true
+    else if (ch === '{' || ch === '[') depth++
+    else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
 }
 
 function usageOf(call: XaiUsage['call'], model: string, response: XaiResponse, ms: number): XaiUsage {
@@ -237,6 +389,7 @@ function usageOf(call: XaiUsage['call'], model: string, response: XaiResponse, m
     outputTokens: usage.output_tokens ?? 0,
     cacheReadTokens: usage.input_tokens_details?.cached_tokens ?? 0,
     toolCalls: toolCallsOf(usage),
+    ...(typeof usage.cost_in_usd_ticks === 'number' ? { billedUsd: usage.cost_in_usd_ticks / 1e10 } : {}),
     ms,
   }
 }

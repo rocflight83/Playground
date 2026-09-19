@@ -31,6 +31,20 @@ the CAFE repetition floor without the replaced session; you do not need
 to compute this — the shell surfaces the merged-plan validation error if
 the floor breaks.
 
+## What you reply with
+
+Two callers read this duty. When you were handed a **response schema**,
+your reply is that schema filled in — `{ "session": …, "knownSummary": … }`
+for drop-as-known (the shell refuses a drop whose `knownSummary` is
+missing or empty), `{ "session": … }` for redo-session — and nothing
+else: no request envelope, no `intent`, no `at`. When you are writing a
+**request file** for the shell's curate command, the request shapes
+below apply. In both cases the replacement session is written out in
+full: title, materials, `highFrequencyUnits`, artifact, self-check,
+`estimatedTime`. A session with empty lists or placeholder strings is not
+a replacement, and a session drafted as prose in your reasoning does not
+count until it is in the reply.
+
 ## Drop-as-known
 
 *"I already know this; give me something that moves me forward."*

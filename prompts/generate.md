@@ -22,9 +22,15 @@ command in, one plan out.
 
 ## Produce a PlanData document
 
-Write a single plan-data document matching `PlanData` in
-`src/plan-types.ts` — that file is the contract; read it rather than
-guessing field names. Every field below is loaded from there.
+Write a single plan-data document matching `PlanData`. The contract is
+the response schema you were handed, or `src/plan-types.ts` when you can
+read files; never guessed field names. Every field below is loaded from
+there.
+
+The document is your entire reply, written out in full: all 14 sessions,
+every material, every preamble field. A skeleton with empty lists or
+placeholder strings is not a plan, and a plan drafted as prose in your
+reasoning does not count until it is in the document.
 
 1. `meta`: subject, currentLevel, hoursPerDay, targetCapability,
    `generatedAt`, optional `honestTarget`/`scopeNote` as a pair, optional

@@ -23,6 +23,17 @@ Treat them as a contract; if any are missing, ask back.
   link*, …) **or** a URL the learner supplies
   (`{ "url": "https://learner.example.com/article" }`).
 
+## What you reply with
+
+Two callers read this duty. When you were handed a **response schema**,
+your reply is that schema filled in — the replacement `Material` itself
+(`title`, `url`, `sourceType`, `estimatedDuration`, `verification`
+placeholders), or `{ "url": … }` when the schema asks only for a URL —
+and nothing else: no request envelope. When you are writing a **request
+file** for the shell's curate command, the request shape below applies.
+Either way the material is written out in full; a placeholder is not a
+replacement.
+
 ## Request shape
 
 ```json

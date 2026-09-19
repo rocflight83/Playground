@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanBrief } from '../src/app/intelligence'
 import { ScriptedIntelligence } from '../src/app/intelligence'
-import { createXaiIntelligence, type XaiRequest, type XaiResponse } from '../src/app/intelligence-xai'
+import { createXaiIntelligence, type XaiRequest, type XaiStreamEvent } from '../src/app/intelligence-xai'
 import { MemoryPlanStore } from '../src/app/plan-store'
 import type { Job } from '../src/app/planner'
 import { Planner } from '../src/app/planner'
@@ -401,10 +401,18 @@ describe('Planner + XaiIntelligence (scenario 8 of #30)', () => {
     const requests: XaiRequest[] = []
     const client = {
       responses: {
-        create: async (params: XaiRequest): Promise<XaiResponse> => {
+        create: async (params: XaiRequest): Promise<AsyncIterable<XaiStreamEvent>> => {
           requests.push(params)
-          const answer = params.text.format.name === 'plan' ? plan : { url: null }
-          return { status: 'completed', output_text: JSON.stringify(answer) }
+          const user = JSON.parse(params.input[0].content) as { responseSchema?: { title?: string } }
+          const answer = user.responseSchema?.title === 'plan' ? plan : { url: null }
+          const text = JSON.stringify(answer)
+          async function* events(): AsyncGenerator<XaiStreamEvent> {
+            yield {
+              type: 'response.completed',
+              response: { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text }] }] },
+            }
+          }
+          return events()
         },
       },
     }
@@ -418,7 +426,7 @@ describe('Planner + XaiIntelligence (scenario 8 of #30)', () => {
     await waitForTerminal(job)
     const { planId } = appliedReport(job)
     expect(planId).toBe('python-programming')
-    expect(requests[0].text.format.name).toBe('plan')
+    expect((JSON.parse(requests[0].input[0].content) as { responseSchema: { title: string } }).responseSchema.title).toBe('plan')
     const stored = await store.read(planId)
     expect(stored.sessions).toHaveLength(14)
   })

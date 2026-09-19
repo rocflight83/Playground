@@ -43,7 +43,10 @@ interface StepSummary {
   outputTokens: number
   cacheReadTokens: number
   toolCalls: Record<string, number>
+  /** List price from `RATES`. */
   costUsd: number
+  /** What xAI billed, summed from the responses' `cost_in_usd_ticks`; absent when no response carried it. */
+  billedUsd?: number
   outcome: string
   unresolved: number
   /** Distinct sessions with an unresolved material — tripwire (b) counts sessions. */
@@ -63,6 +66,17 @@ function costOf(usage: XaiUsage[]): number {
     }
   }
   return usd
+}
+
+/** The billed total, or `undefined` when any call lacked the figure (a partial sum would mislead). */
+function billedOf(usage: XaiUsage[]): number | undefined {
+  if (usage.length === 0 || usage.some((u) => u.billedUsd === undefined)) return undefined
+  return usage.reduce((s, u) => s + (u.billedUsd ?? 0), 0)
+}
+
+/** The figure the tripwires and totals use: billed when known, else list price. */
+function spendOf(step: StepSummary): number {
+  return step.billedUsd ?? step.costUsd
 }
 
 function sumToolCalls(usage: XaiUsage[]): Record<string, number> {
@@ -102,6 +116,7 @@ function summarise(name: string, job: Job, usage: XaiUsage[], ms: number): StepS
     cacheReadTokens: usage.reduce((s, u) => s + u.cacheReadTokens, 0),
     toolCalls: sumToolCalls(usage),
     costUsd: costOf(usage),
+    billedUsd: billedOf(usage),
     outcome: job.stage,
     unresolved: report?.unresolvedCount ?? 0,
     unresolvedSessions,
@@ -117,6 +132,7 @@ function printStep(step: StepSummary): void {
   console.log(`  tokens:       in ${step.inputTokens} (cached ${step.cacheReadTokens}) / out ${step.outputTokens}`)
   console.log(`  tool calls:   ${JSON.stringify(step.toolCalls)}`)
   console.log(`  list price:   $${step.costUsd.toFixed(4)}`)
+  console.log(`  billed:       ${step.billedUsd === undefined ? 'not reported' : `$${step.billedUsd.toFixed(4)}`}`)
   console.log(`  unresolved:   ${step.unresolved} material(s) across ${step.unresolvedSessions} session(s)`)
   if (step.refusalReasons.length > 0) console.log(`  refusals:     ${step.refusalReasons.join(' | ')}`)
 }
@@ -204,13 +220,13 @@ function printTripwires(steps: StepSummary[]): void {
       ? repairRounds > TRIPWIRES.maxRepairRounds
       : generate.generatePlanCalls > TRIPWIRES.maxRepairRounds
   const b = generate.unresolvedSessions > TRIPWIRES.maxUnresolvedSessions
-  const c = generate.costUsd > TRIPWIRES.maxGenerateCostUsd
+  const c = spendOf(generate) > TRIPWIRES.maxGenerateCostUsd
   console.log('\n== Decision-8 tripwires (any one fired → build #29) ==')
   console.log(`  (a) repair rounds needed ${generate.outcome === 'applied' ? repairRounds : `>${repairRounds} (never passed)`} > ${TRIPWIRES.maxRepairRounds}: ${a ? 'FIRED' : 'ok'}`)
   console.log(`  (b) sessions with an unresolved material ${generate.unresolvedSessions} > ${TRIPWIRES.maxUnresolvedSessions}: ${b ? 'FIRED' : 'ok'}`)
-  console.log(`  (c) generate cost $${generate.costUsd.toFixed(4)} > $${TRIPWIRES.maxGenerateCostUsd.toFixed(2)}: ${c ? 'FIRED' : 'ok'}`)
+  console.log(`  (c) generate cost $${spendOf(generate).toFixed(4)} (${generate.billedUsd === undefined ? 'list price' : 'billed'}) > $${TRIPWIRES.maxGenerateCostUsd.toFixed(2)}: ${c ? 'FIRED' : 'ok'}`)
   console.log('  (d) practitioner-material quality: curate once from the live page and judge')
-  console.log(`  total list price this run: $${steps.reduce((s, x) => s + x.costUsd, 0).toFixed(4)}`)
+  console.log(`  total this run: $${steps.reduce((s, x) => s + spendOf(x), 0).toFixed(4)} (list price $${steps.reduce((s, x) => s + x.costUsd, 0).toFixed(4)})`)
 }
 
 main().catch((err: unknown) => {

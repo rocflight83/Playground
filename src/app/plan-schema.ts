@@ -30,6 +30,7 @@ const verificationRecord: JsonSchema = {
 }
 
 const material: JsonSchema = {
+  title: 'material',
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -121,6 +122,7 @@ const curationRecord: JsonSchema = {
 }
 
 const plan: JsonSchema = {
+  title: 'plan',
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -159,14 +161,19 @@ const plan: JsonSchema = {
 
 /** `{ session, knownSummary? }` — what `Intelligence.replaceSession` returns. */
 const sessionReplacement: JsonSchema = {
+  title: 'session_replacement',
   type: 'object',
   additionalProperties: false,
-  properties: { session, knownSummary: { type: 'string' } },
+  properties: {
+    session,
+    knownSummary: { type: 'string', description: 'Required for drop-as-known; absent for redo-session.' },
+  },
   required: ['session'],
 }
 
 /** `{ url: string | null }` — what `Intelligence.findReplacementUrl` returns. */
 const replacementUrl: JsonSchema = {
+  title: 'replacement_url',
   type: 'object',
   additionalProperties: false,
   properties: { url: { type: ['string', 'null'] } },
